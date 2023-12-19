@@ -44,10 +44,13 @@ def abragam_dist(tau_input,Dres, prob, A=0.5):
         dq[index] = A * np.trapz(y,Dres)
     return dq
 
-
 #Transverse relaxation
 def T2_decay(tau,T2,A=1,beta=1): 
     return A*np.exp(-(tau/T2)**beta)
+
+#DQ model curve = abragam multiplied by T2 decay
+def single_Dres_dq(tau,Dres,T2,A,beta):
+    return abragam(tau,Dres)*T2_decay(tau,T2,A,beta)
 
 
 #Normal distribution
@@ -74,9 +77,154 @@ def rawdata(filename="BP_303.txt",sample=None):
     df = pd.read_csv(filename, sep='\t',header=None,names=['Time','I_ref','I_DQ','Im'])
     return df,sample
 
+#Normalization to the first point of the data and cutoff extra data
+def clean(df,cutoff=None,norm_factor=None):
+    if norm_factor==None: norm_factor = df['I_DQ'][0] + df['I_ref'][0]
+    df['I_DQ'] = df['I_DQ'] / norm_factor
+    df['I_ref'] = df['I_ref'] / norm_factor
+    df['I_tot'] = df['I_DQ'] + df['I_ref']
+
+    plotmq(df['Time'],df['I_DQ'],df['I_ref'],df['I_tot'])
+    
+    if cutoff==None:
+        finish=1
+        while finish ==1:
+            cutoff = float(input('Enter the time cutoff for further calculations'))
+            df_check = df[df['Time'] <= cutoff].copy()
+            plotmq(df_check['Time'],df_check['I_DQ'],df_check['I_ref'],df_check['I_tot'])
+            finish = int(input('Press 1 if you want another cutoff'))
+    return df[df['Time'] <= cutoff]
+
+#Scatter plot of multiple files
+def plotmq(tau,*args,y_axis='linear',**kwargs):
+    for I in args:
+        plt.scatter(tau,I)
+    for key,values in kwargs.items():
+        plt.plot(tau,values,label=key)
+        plt.legend(loc='upper right')
+    plt.yscale(y_axis)
+    xmin, xmax, ymin, ymax = plt.axis()
+    plt.ylim(bottom=0.001,top=min(ymax,1))
+    plt.show()
+
+
+
+
+##Stop program because it is being tested
+def test(status=None):
+    if status == None: raise ValueError('Exiting because program is set to test')
+
 ###################################################
 # Creation of fitting models
 ###################################################
+
+#Tail sustraction
+def tail(df,tau_start=None,tail_model=None,params=None):
+    #Ready the model   
+    if tail_model==None: tail_model=lm.Model(T2_decay)
+
+    #Ready the parameters
+    if params==None:
+        params = lm.Parameters() 
+        params.add('A', value=0.1,min=0.05,max=0.9) #Fraction of tail
+        params.add('T2', value=max(df['Time'])/3,min=50,max=500) #T2 of tail
+        params.add('beta', value=1,vary=False) #Stretching exponent
+
+    a = tau_start
+    
+    finish = 1
+    while finish == 1:
+    #Ready the data 
+        if a==None: tau_start = float(input('Enter the starting time for tail fitting'))
+        df_tail = df[df['Time'] >= tau_start ].copy()
+        tau = df_tail['Time']
+        I_tot = df_tail['I_tot']
+
+        
+    ##Fit the data to the model
+        tail_fit=tail_model.fit(I_tot,params,tau=tau,method='basinhopping')
+        fitted= tail_fit.eval(tail_fit.params,tau=df['Time'])
+        print(tail_fit.fit_report())
+
+        values=tail_fit.best_values
+        
+        df['I_SumMQ'] = df['I_DQ'] + df['I_ref'] - T2_decay(df['Time'],values['A'],values['T2'],values['beta']) 
+        df['I_nDQ'] = df['I_DQ'] / df['I_SumMQ']
+
+        tail_fit.plot()
+        plt.show()
+        
+        
+        plotmq(df['Time'],df['I_tot'],df['I_DQ'],y_axis='log',line=fitted)
+
+        
+        plotmq(df['Time'],df['I_tot'],df['I_DQ'],df['I_nDQ'],line=fitted)
+
+    ##Plot the result and graph
+
+        
+        
+        if a!=None: return tail_fit
+        
+        finish = int(input('Press 1 if you want another cutoff'))    
+
+    return tail_fit
+        
+##Prameter initialization for dq curve without distribution
+def model_dq_no_distribution(comp=3):
+    if comp==3:
+        connectivity=["Single_","Double_","Higher_"]
+    else:
+        connectivity=[input("Prefix for each component") for a in range(comp)]
+        
+    temp = [lm.Model(single_Dres_dq,prefix=fraction) for fraction in connectivity]
+    for a in temp: 
+        try:
+            dq = dq + a
+        except UnboundLocalError:
+            dq = a
+    return dq,connectivity
+
+##Prameter initialization for total curve without distribution
+def model_tot(connectivity):
+    temp = [lm.Model(T2_decay,prefix=fraction) for fraction in connectivity]
+    for a in temp: 
+        try:
+            tot = tot + a
+        except UnboundLocalError:
+            tot = a
+    tot = tot + lm.Model(T2_decay,prefix="Tail_")
+    return tot
+
+##Update old parameter values to new values
+def update_params(parameter,value_dict):
+    for key,values in value_dict.items():
+        parameter[key].set(value=values)
+    return parameter
+
+##Fit DQ curve only
+def fit_DQ_only(df,parameter,model,connectivity,**kwagrs):
+
+    dq_fitted=model.fit(df['I_DQ'],parameter,tau=df['Time'],**kwagrs)
+    print(dq_fitted.fit_report())
+    dq_fitted.plot(show_init=True,title='I dq only fit')
+
+    fit_dq=dq_fitted.eval()
+    comp_dq=dq_fitted.eval_components()
+    plotmq(df['Time'],**comp_dq)
+    return dq_fitted
+
+##Fit tot curve only
+def fit_tot_only(df,parameter,model,connectivity,**kwagrs):
+
+    tot_fitted=model.fit(df['I_tot'],parameter,tau=df['Time'],**kwagrs)
+    print(tot_fitted.fit_report())
+    tot_fitted.plot(show_init=True,title='I total only fit')
+
+    fit_tot=tot_fitted.eval()
+    comp_tot=tot_fitted.eval_components()
+    plotmq(df['Time'],y_axis='log', Total=fit_tot,**comp_tot)
+    return tot_fitted
 
 
 
@@ -84,9 +232,7 @@ def rawdata(filename="BP_303.txt",sample=None):
 ###################################################
 
 
-
-
-
+    
 
 #This section is for testing purpose only
 ###################################################
