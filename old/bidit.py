@@ -19,10 +19,10 @@ import pickle
 # Declaration of functions
 ###################################################
 
-
 #Smooth Heaviside funtion
 def heaviside(x, amplitude=1, steepness=1, base=1, center=0):
     return base + amplitude * (0.5 + 0.5 * np.tanh((x-center) * steepness))
+
 
 
 #Overlap penalty for values
@@ -39,20 +39,68 @@ def abragam(tau,Dres,A=0.5):
 #Abragam like function with a Dres distribution
 def abragam_dist(tau_input, Dres, prob, A=0.5):
     tau = np.array(tau_input)
+
     y = (1 - np.exp(-(0.378 * 2 * np.pi * Dres * tau[:, np.newaxis]) ** 1.5) *
          np.cos(0.583 * 2 * np.pi * Dres * tau[:, np.newaxis])) * prob
 
-    dq = A * np.trapz(y, Dres, axis=1)
+    intensity = A * np.trapz(y, Dres, axis=1)
 
-    return dq
+    return intensity
 
 #Transverse relaxation
-def T2_decay(tau,T2,A=1,beta=1): 
-    return A*np.exp(-(tau/T2)**beta)
+def T2_decay(tau,T2,A=1,beta=1):
+    intensity = A*np.exp(-(tau/T2)**beta)
+    return intensity
+
+def distribution_T2_decay(tau,T2,sigma,A=1,beta=1):
+    tau_s = tau/T2_domain['scaling']
+    T2_s = T2/T2_domain['scaling']
+    Domain,prob =Dres_prob_distribution(T2_s,sigma,**T2_domain)
+
+    tau_s = np.array(tau_s)
+    y = np.exp(-(tau_s[:, np.newaxis]/Domain) ** beta) * prob
+    intensity = A * np.trapz(y, Domain, axis=1)
+    return intensity
 
 #DQ model curve = abragam multiplied by T2 decay
 def single_Dres_dq(tau,Dres,T2,A,beta):
-    return abragam(tau,Dres)*T2_decay(tau,T2,A,beta)
+    intensity = abragam(tau,Dres)*T2_decay(tau,T2,A,beta)
+    return intensity
+
+#DQ model curve = abragam multiplied by T2 decay
+def distribution_Dres_dq(tau,Dres,sigma,T2,A,beta):
+    tau_s = tau/Dres_domain['scaling']
+    T2_s = T2/Dres_domain['scaling']
+    Dres_Hz,prob =Dres_prob_distribution(Dres,sigma,**Dres_domain)
+    intensity =abragam_dist(tau_s,Dres_Hz,prob)*T2_decay(tau_s,T2_s,A,beta)
+    return intensity
+
+
+def Dres_prob_distribution(mean,sigma,start, end, division, scaling, dist):
+    mean=mean*scaling
+    if dist in [lognormal,lognormal2]:
+        if start is None:
+            n=4
+            k=n*1
+            start=np.log(mean)-n*sigma
+            while start <=0:
+                k=k-0.1
+                start=np.log(mean)-k*sigma
+        if end is None:
+            end=np.log(mean)+n*sigma
+        Dres=np.logspace(start, end,num=division,base=np.e)
+    elif dist in [gaussian]:
+        if start is None:
+            start=mean-n*sigma
+        if end is None:
+            end=mean+n*sigma
+        Dres=np.linspace(start, end,division)
+    # print(start,end,mean,sigma)
+    prob = dist(Dres,mean,sigma)
+    # plt.plot(Dres,prob)
+    # plt.show()
+    return Dres,prob
+
 
 #Normal distribution
 def gaussian(x,mu=0,sigma=1,normalize=True):
@@ -71,15 +119,17 @@ def lognormal(x,mu=0,sigma=1,normalize=True):
 #Distribution with normal distribution of log(x) 
 def lognormal2(x,mu=1,sigma=1,normalize=True):
     prob = gaussian(np.log(x),np.log(mu),sigma,normalize)
+    # print(x,prob,mu,sigma)
     if normalize==True: prob = prob / np.trapz(prob,x)
     return prob
 
 #Get the list of all folder in a location which has a file with fixed ending
-def file_list(ending,root_folder=None):
+def file_list(ending,root_folder=None,exclude=['temp']):
     file=[]
     if root_folder is None:
         root_folder=os.getcwd()
     for root,dirs, files in os.walk(root_folder):
+        dirs[:] = [d for d in dirs if d not in exclude]
         for each in files:
             if each.endswith(ending):
                 file.append(each[:-len(ending)])
@@ -88,7 +138,11 @@ def file_list(ending,root_folder=None):
 
 #Get the foldername and the file with Baum-Pines data
 def rawdata(filename="BP_303.txt",sample=None):
-    if sample == None: sample= os.getcwd().split('\\')[-1]
+    if sample == None:
+        sample= os.getcwd()
+        print(sample)
+        sample = sample.replace('\\','/')
+        sample= sample.split('/')[-1]
     df = pd.read_csv(filename, sep='\t',header=None,names=['Time','I_ref','I_DQ','Im'])
     return df,sample
 
@@ -98,22 +152,23 @@ def clean(df,cutoff=None,norm_factor=None):
     df['I_DQ'] = df['I_DQ'] / norm_factor
     df['I_ref'] = df['I_ref'] / norm_factor
     df['I_tot'] = df['I_DQ'] + df['I_ref']
+    df['I_diff'] = df['I_ref'] - df['I_DQ']
 
     if cutoff==None:
-        plotmq(df['Time'],df['I_DQ'],df['I_tot'])
+        plotmq(df['Time'],df['I_DQ'],df['I_ref'])
     
     if cutoff==None:
         finish=1
         while finish ==1:
             cutoff = float(input('Enter the time cutoff for further calculations'))
             df_check = df[df['Time'] <= cutoff].copy()
-            plotmq(df_check['Time'],df_check['I_DQ'],df_check['I_tot'])
+            plotmq(df_check['Time'],df_check['I_DQ'],df_check['I_ref'],y_axis='log')
             finish = int(input('Press 1 if you want another cutoff'))
 
     df_new = df[df['Time'] <= cutoff].copy()
 
     if cutoff==None:
-        plotmq(df_new['Time'],df_new['I_DQ'],df_new['I_tot'])
+        plotmq(df_new['Time'],df_new['I_DQ'],df_new['I_ref'],y_axis='log')
     return df_new
 
 #Scatter plot of multiple files
@@ -125,7 +180,7 @@ def plotmq(tau,*args,y_axis='linear',save=None,show=True,**kwargs):
         plt.legend(loc='upper right')
     plt.yscale(y_axis)
     xmin, xmax, ymin, ymax = plt.axis()
-    plt.ylim(bottom=0.001,top=min(ymax,1))
+    plt.ylim(bottom=0.001,top=min(ymax,1)+0.1)
     if y_axis=='linear':
         plt.ylim(bottom=0)
     if save is not None:
@@ -136,6 +191,10 @@ def plotmq(tau,*args,y_axis='linear',save=None,show=True,**kwargs):
     else:
         plt.close()
 
+#Intensity decay due to diffusion in a field gradient
+def diffusion_decay(gsquared,D,k,A=1):
+    intensity = A * np.exp(-k*D*gsquared)
+    return intensity
 
 #Grab only required parameters from the parameter set
 def grab(parameter,fraction,string,extra=False,forward=True):
@@ -172,15 +231,15 @@ def load_object(filename):
 ###################################################
 
 #Tail sustraction
-def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False):
+def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='diff'):
     #Ready the model   
     if tail_model==None: tail_model=lm.Model(T2_decay)
 
     #Ready the parameters
     if params==None:
         params = lm.Parameters() 
-        params.add('A', value=0.1,min=0.01,max=0.9) #Fraction of tail
-        params.add('T2', value=max(df['Time'])/3,min=5 ,max=500) #T2 of tail
+        params.add('A', value=0.01,min=0.01 , max=0.9) #Fraction of tail
+        params.add('T2', value=100, min=0) #T2 of tail
         params.add('beta', value=1,vary=vary_beta) #Stretching exponent
 
     a = tau_start
@@ -191,28 +250,35 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False):
         if a==None: tau_start = float(input('Enter the starting time for tail fitting'))
         df_tail = df[df['Time'] >= tau_start ].copy()
         tau = df_tail['Time']
-        I_tot = df_tail['I_tot']
-
+        
+    #Determine which data to fit in the tail
+        match space:
+            case 'ref':
+                I = df_tail['I_ref']
+            case 'diff':
+                I = df_tail['I_diff']
+            case 'sum':
+                I = df_tail['I_tot']
         
     ##Fit the data to the model
-        tail_fit=tail_model.fit(I_tot,params,tau=tau,method='basinhopping')
+        tail_fit=tail_model.fit(I,params,tau=tau,method='basinhopping')
         fitted= tail_fit.eval(tail_fit.params,tau=df['Time'])
+        
+
+    ##Print the fit report
         print(tail_fit.fit_report())
 
-        values=tail_fit.best_values
-        
-        df['I_SumMQ'] = df['I_DQ'] + df['I_ref'] - T2_decay(df['Time'],values['A'],values['T2'],values['beta']) 
-        df['I_nDQ'] = df['I_DQ'] / df['I_SumMQ']
+         
+        df['I_nDQ'] = df['I_DQ'] / (df['I_DQ'] + df['I_ref'] - fitted)
 
    
         #plotmq(df['Time'],df['I_tot'],df['I_DQ'],y_axis='log',line=fitted)
 
         
-        plotmq(df['Time'],df['I_tot'],df['I_DQ'],df['I_nDQ'],y_axis='log',line=fitted)
+        plotmq(df['Time'],df['I_ref'],df['I_DQ'],df['I_nDQ'],y_axis='log',line=fitted)
 
     ##Plot the result and graph
 
-        
         
         if a!=None: return tail_fit
         
@@ -271,7 +337,7 @@ def model_tot(connectivity):
             tot = tot + a
         except UnboundLocalError:
             tot = a
-    tot = tot + lm.Model(T2_decay,prefix="Tail_")
+    tot = tot + lm.Model(T2_decay,prefix="tail_")
     return tot
 
 ##Update old parameter values to new values
@@ -296,7 +362,7 @@ def fit_DQ_only(df,parameter,model,connectivity,**kwagrs):
     dq_fitted.plot_fit(show_init=True,title='I dq only fit')
 
     comp_dq=dq_fitted.eval_components()
-    plotmq(df['Time'],**comp_dq)
+    plotmq(df['Time'],y_axis='log',**comp_dq)
     return dq_fitted
 
 ##Fit tot curve only
@@ -311,24 +377,37 @@ def fit_tot_only(df,parameter,model,connectivity,**kwagrs):
     return tot_fitted
 
 #Definition of DQ curve fitting model
-def fit_simultaneous(parameter,df,model_dq,model_tot,connectivity,T2_penalty,Dres_penalty,tail_cutoff,allow_overlap=False):
-    df_truncated=df[df['Time']<tail_cutoff].copy()
-    residual_dq = (df_truncated['I_DQ'] - model_dq.eval(parameter,tau=df_truncated['Time']))  #*0.5/ max(df_truncated['I_DQ'])
+def fit_simultaneous(parameter,df,model_dq,model_tot,connectivity=None,T2_penalty=None,Dres_penalty=None,tail_cutoff=None,allow_overlap=False):
+    if tail_cutoff is None:
+        tail_cutoff=max(df['Time'])
+    df_truncated=df[df['Time']<=tail_cutoff].copy()
+    residual_dq = np.log1p(df_truncated['I_DQ']) - np.log1p(model_dq.eval(parameter,tau=df_truncated['Time']))
 
-    residual_tot = df['I_tot'] - model_tot.eval(parameter,tau=df['Time'])
+    residual_tot = np.log1p(df['I_tot']) - np.log1p(model_tot.eval(parameter,tau=df['Time']))
     
     residual = pd.concat([residual_dq,residual_tot])
     
+    #Penalize if the order of Dres and T2 are not correct
     if allow_overlap==False:
         residual = residual * extract_and_penalize(parameter,connectivity,T2_penalty,Dres_penalty)
 
-    err_A = 1-sum(grab(parameter,connectivity,"A","Tail_",False))
+    #Penalize when the sum of the components is not 1
+    err_A = 1-sum(collect(parameter,"A"))
     residual = residual * (1+abs(err_A))**4
     return residual #Minimization parameter
 
+
+def collect(params,string):
+    a=[]
+    values=params.valuesdict()
+    for key,value in  values.items():
+        if key.endswith(string):
+            a.append(value)
+    return a
+
 #Extract T2 and Dres difference
 def extract_diff(parameter,connectivity):
-    diff_T2 = np.diff(grab(parameter,connectivity,"T2","Tail_",False))
+    diff_T2 = np.diff(grab(parameter,connectivity,"T2",False))
 
     diff_Dres = np.diff(grab(parameter,connectivity,"Dres"))    
     return diff_T2,diff_Dres
@@ -342,50 +421,35 @@ def extract_and_penalize(parameter,connectivity,T2_penalty,Dres_penalty):
 
 #This section contains non standard codes
 ###################################################
-#DQ model curve = abragam multiplied by T2 decay
-def distribution_Dres_dq(tau,Dres,sigma,T2,A,beta):
-    tau_s = tau/Dres_domain['scaling']
-    T2_s = T2/Dres_domain['scaling']
-    Dres_Hz,prob =Dres_prob_distribution(Dres,sigma,**Dres_domain)
-    DQ=abragam_dist(tau_s,Dres_Hz,prob)*T2_decay(tau_s,T2_s,A,beta)
-    return DQ
 
-def Dres_prob_distribution(mean,sigma,start, end, division, scaling, dist):
-    mean=mean*scaling
-    if dist in [lognormal,lognormal2]:
-        Dres=np.logspace(np.log10(start), np.log10(end),num=division)
-    elif dist in [gaussian]:
-        Dres=np.linspace(start, end,division)
-    prob = dist(Dres,mean,sigma)
-    return Dres,prob
 
 ###################################################
 # Declaration of global variables
 ###################################################
 
-Dres_domain={'start': 1,
-                'end': 200,
-                'division': 2000,
+Dres_domain={'start': None,
+                'end': None,
+                'division': 1000,
                 'scaling': 1000,
+                'dist':lognormal2
+        }
+
+T2_domain={'start': None,
+                'end': None,
+                'division': 1000,
+                'scaling': 1,
                 'dist':lognormal2
         }
 #This section is for testing purpose only
 ###################################################
-
-##x=np.linspace(1,100,1000)
-##y=lognormal(x,np.log(50),0.1)
-##y1=lognormal(x,np.log(153.7),0.1)
+##mean = np.linspace(10,100,10)
+##sig=np.linspace(0.1,1,10)
 ##
-##
-##tau = np.linspace(0.00001,0.025,2500)
-##
-##T2=0.005
-##
-##Idq= abragam_dist(tau,x,y)* T2_decay(tau,T2)
-##Idq1=abragam_dist(tau,x,y1) * T2_decay(tau,T2)
-##plt.plot(x,y1)
-##plt.show()
-##plotmq(x,y+y1,mu1=y,mu2=y1)
-##plotmq(tau,Idq+Idq1,mu1=Idq,mu2=Idq1)
-
+##for sigma in sig:
+##    for mu in mean:
+##        x= np.logspace(np.log(mu)-2*sigma,np.log(mu)+2*sigma,num=1000,base=np.e)
+##        print(x)
+##        y= lognormal2(x,mu,sigma,normalize=True)
+##        plt.plot(x,y)
+##    plt.show()
 ###################################################
