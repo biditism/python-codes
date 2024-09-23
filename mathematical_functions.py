@@ -112,6 +112,9 @@ def AWPL_MQ_decay(tau,Dres,T2,k,t0):
     intensity = AWPL_MQ(tau,Dres,k,t0) * T2_decay(tau,T2)
     
     return intensity
+
+def nothing(a):
+    return a
 # a=np.linspace(0.1,100,100000)
 # y=AWPL_dq_decay(a, 0.1, 1,1.2, 0.099)
 # plt.plot(a,y)

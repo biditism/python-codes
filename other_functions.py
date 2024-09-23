@@ -25,7 +25,7 @@ from datetime import datetime
 def overlap_penalty(diff, amount=0, width=1):
     penalty = 1
     for x in diff:
-        penalty = penalty * fn.heaviside(x, amount, 1/width)
+        penalty = penalty * fn.heaviside(-x, amount, 1/width)#Punish when the difference is negative
     return penalty
 
 
@@ -68,19 +68,21 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
     if omit is not None:
         df = df[~df.Time.isin(omit)]
 
-
+    a=0
+    if df['Time'][0] == 0:
+        k=k+1
+        a=a+1
+    y=df['I_ref'][a:k]
+    x=df['Time'][a:k]
+    m,c=np.polyfit(x, y, 1)
+    print('Zero time Iref=',c)
+    plt.scatter(df['Time'][:k],df['I_DQ'][:k])
+    plt.scatter(df['Time'][:k],df['I_ref'][:k])
+    plt.axline((0,c), slope=m)
+    plt.xlim(0)
+    plt.show ()            
+    
     if df['Time'][0] != 0:
-        y=df['I_ref'][:k]
-        x=df['Time'][:k]
-        m,c=np.polyfit(x, y, 1)
-        print('Zero time Iref=',c)
-        plt.scatter(x,df['I_DQ'][:k])
-        plt.scatter(x,y)
-        plt.axline((0,c), slope=m)
-        plt.xlim(0)
-        plt.show ()            
-    
-    
         df.loc[-1] = [0,c,0]  # add 0 time point
         df.index = df.index + 1  # shifting index
         df.sort_index(inplace=True)
@@ -134,14 +136,9 @@ def plotmq(tau,*args,y_axis='linear',save=None,show=True,**kwargs):
 
 
 #Grab only required parameters from the parameter set
-def grab(parameter,fraction,string,extra=False,forward=True):
+def grab(parameter,string):
     dictionary=parameter.valuesdict()
-    connect=fraction.copy()
-    if extra != False: connect.append(extra)
-    if forward != True: connect.reverse()
-    new=[]
-    for a in connect:
-        new.append(dictionary[a+string])
+    new=[value for key,value in dictionary.items() if string in key]
     return np.asarray(new)
 
 
@@ -209,6 +206,7 @@ def plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
     # Plot residuals
     plt.plot(tau, DQ - fitted_points_DQ['Full_Fit_'], label='DQ Residual')
     plt.plot(tau, MQ - fitted_points_MQ['Full_Fit_'], label='MQ Residual')
+    plt.legend(loc='upper right')
     
     # Save residuals plots
     plt.savefig(file+'_residuals.pdf', format="pdf", bbox_inches="tight")
@@ -267,6 +265,7 @@ def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
     df_MQ = pd.DataFrame(fitted_points_MQ).add_suffix('MQ')
     df_fit = df_DQ.copy().assign(**df_MQ)
     df_result = df.copy().assign(**df_fit)
+    df_result = df_result.assign(Sample=file)
     df_result.to_csv(file+'_fit_value.csv',index=False)
     
     print(lm.fit_report(sim_fitted))
@@ -293,6 +292,21 @@ def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
             shutil.copy2(f, path)
     
     return df_result
+
+#Function for slicing a spectra
+def spectra_slice(spectra, no_of_slices=1, start=None, stop=None, slice_points=None):
+    if slice_points is None:
+        slices=np.array_split(spectra[start:stop], no_of_slices)
+    return slices
+
+#Function for determining the area of a set of spectra slices
+def slice_area(spectra_set, no_of_slices=1, start=None, stop=None, slice_points=None):
+    Area =np.zeros((len(spectra_set),no_of_slices))    
+    for idx,spectra in enumerate(spectra_set):
+        slices=spectra_slice(spectra, no_of_slices, start, stop, slice_points)
+        for x,y in enumerate(slices):
+            Area[idx,x] =  np.trapz(y)
+    return Area
 ###################################################
 # Creation of fitting models
 ###################################################
@@ -352,29 +366,38 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
 
 
 #Simultaneous fit
-def fit_simultaneous(parameter,tau,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None,tail_cutoff=None,allow_overlap=True):
+def fit_simultaneous(parameter,tau,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None,tail_cutoff=None,allow_overlap=False,scaling_function=fn.nothing):
     if tail_cutoff is None:
         tau_truncated=tau
     else:
         DQ=DQ[:tail_cutoff]
         tau_truncated=tau[:tail_cutoff]
-    residual_DQ = np.log1p(DQ) - np.log1p(model_DQ.eval(parameter,tau=tau_truncated))
-
-    residual_MQ = np.log1p(MQ) - np.log1p(model_MQ.eval(parameter,tau=tau))
+       
+    residual_DQ = (scaling_function(DQ) - scaling_function(model_DQ.eval(parameter,tau=tau_truncated)))/max(DQ)
     
-    residual = pd.concat([residual_DQ,residual_MQ])
+    residual_MQ = (scaling_function(MQ) - scaling_function(model_MQ.eval(parameter,tau=tau)))/max(MQ)
     
+    residual = pd.concat([residual_DQ, residual_MQ])    
     
     #Penalize if the order of Dres and T2 are not correct
     if allow_overlap==False:
-        residual = residual * extract_and_penalize(parameter,connectivity,T2_penalty,Dres_penalty)
-        
-    #Penalize if the components do not addup to 1
+        residual = residual * extract_and_penalize(parameter,T2_penalty,Dres_penalty)
     
-    err_A= 1-parameter['total_A']
-    residual = residual * (1+abs(err_A))**4
-        
     return residual #Minimization parameter
 
 #This section contains non standard codes
 ###################################################
+
+#Extract T2 and Dres difference
+def extract_diff(parameter,connectivity=None):
+    diff_T2 = grab(parameter,"diff_T2")
+
+    diff_Dres = grab(parameter,"diff_Dres")    
+    return diff_T2,diff_Dres
+
+#Extract and penalize T2 and Dres difference
+def extract_and_penalize(parameter,T2_penalty,Dres_penalty):
+    
+    diff_T2, diff_Dres = extract_diff(parameter)
+    a = 1 * overlap_penalty(diff_T2,**T2_penalty) * overlap_penalty(diff_Dres,**Dres_penalty)
+    return a

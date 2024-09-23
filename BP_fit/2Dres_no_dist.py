@@ -58,7 +58,6 @@ def MQ_intensity_without_tail(tau, tail_A,
 data_cutoff=None #Cutoff for excess data points
 tail_cutoff=None #Start point for tail fitting
 DQ_cutoff=40 #Final point for DQ curve fitting
-force_1=False
 
 tail_freedom=0.1 #Percentage freedeom for tail to vary later
 
@@ -109,8 +108,8 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.05, 0.2), 'first_T2': (1, 20), 'first_A': (0.01, 0.9), 'first_beta': (0.5, 2),
-    'second_Dres': (0.005, 0.05), 'second_T2': (20, 40), 'second_A': (0.01, 0.9), 'second_beta': (0.5, 2),
+    'first_Dres': (0.0001, 0.5), 'first_T2': (0.5, tail_result['T2']), 'first_A': (0.01, 0.99), 'first_beta': (0.5, 2),
+    'second_Dres': (0.0001, 0.5), 'second_T2': (0.5, tail_result['T2']), 'second_A': (0.01, 0.99), 'second_beta': (0.5, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
     'tail_beta': (0.5, 2)
@@ -144,12 +143,11 @@ if tail_subtraction:
     DQ_params['tail_A'].set(value=tail_result['A'],vary=False)
     
 
-# Define the sum of all parameters
-DQ_params.add('total_A',0.9999,vary=True,min=0.999,max=1,
-              expr='first_A+second_A+tail_A')
 
-if force_1:
-    DQ_params['tail_A'].set(expr='1-first_A-second_A')
+# Define the difference of T2 and Dres values as parameters
+DQ_params.add('diff_Dres_1', expr='first_Dres-second_Dres')
+DQ_params.add('diff_T2_1', expr='second_T2-first_T2')
+
 ##############################################
 #Define DQ and MQ models and other variables
 ##############################################

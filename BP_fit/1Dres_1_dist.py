@@ -38,7 +38,7 @@ def MQ_intensity_without_tail(tau, tail_A,
     
     first_comp = fn.T2_decay(tau, first_T2,first_A,first_beta)
     
-    intensity = first_comp + second_comp
+    intensity = first_comp
     return intensity
 #############################################
 
@@ -49,8 +49,7 @@ def MQ_intensity_without_tail(tau, tail_A,
 
 data_cutoff=None #Cutoff for excess data points
 tail_cutoff=None #Start point for tail fitting
-DQ_cutoff=40 #Final point for DQ curve fitting
-force_1=False
+DQ_cutoff=None #Final point for DQ curve fitting
 
 tail_freedom=0.1 #Percentage freedeom for tail to vary later
 
@@ -101,7 +100,7 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.05, 0.2), 'first_sigma': (0.001, 0.5), 'first_T2': (1, 20), 'first_A': (0.01, 0.99), 'first_beta': (0.5, 2),
+    'first_Dres': (0.0001, 0.5), 'first_sigma': (0.001, 0.5), 'first_T2': (0.5, tail_result['T2']), 'first_A': (0.01, 0.99), 'first_beta': (0.5, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
     'tail_beta': (0.5, 2)
@@ -135,12 +134,6 @@ if tail_subtraction:
     DQ_params['tail_A'].set(value=tail_result['A'],vary=False)
     
 
-# Define the sum of all parameters
-DQ_params.add('total_A',0.9999,vary=True,min=0.999,max=1,
-              expr='first_A+tail_A')
-
-if force_1:
-    DQ_params['tail_A'].set(expr='1-first_A')
 ##############################################
 #Define DQ and MQ models and other variables
 ##############################################
@@ -265,9 +258,10 @@ fitted_points_MQ = {
 oth.plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, file)
 
 #Plot of the Dres distribution
-Dres =np.linspace(0.001,0.1,1000)
 prob = {}
 for x in connectivity:
+    lower,upper=lognorm.interval(0.99, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    Dres =np.linspace(lower,upper,1000)
     prob[x]=lognorm.pdf(Dres, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
     plt.plot(Dres, prob[x],label=x)    
 plt.savefig(file+'_Dres.pdf', format="pdf", bbox_inches="tight")
