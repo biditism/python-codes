@@ -70,17 +70,13 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
 
     a=0
     if df['Time'][0] == 0:
+        print('Measured zero time Iref=',df['I_ref'][0]) 
         k=k+1
         a=a+1
     y=df['I_ref'][a:k]
     x=df['Time'][a:k]
     m,c=np.polyfit(x, y, 1)
-    print('Zero time Iref=',c)
-    plt.scatter(df['Time'][:k],df['I_DQ'][:k])
-    plt.scatter(df['Time'][:k],df['I_ref'][:k])
-    plt.axline((0,c), slope=m)
-    plt.xlim(0)
-    plt.show ()            
+    print('Extrapolated zero time Iref=',c)           
     
     if df['Time'][0] != 0:
         df.loc[-1] = [0,c,0]  # add 0 time point
@@ -114,7 +110,7 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
     return df_new
 
 #Scatter plot of multiple files
-def plotmq(tau,*args,y_axis='linear',save=None,show=True,**kwargs):
+def plotmq(tau,*args,y_axis='linear',save=None,show=False,**kwargs):
     for I in args:
         plt.scatter(tau,I)
     for key,values in kwargs.items():
@@ -211,7 +207,7 @@ def plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
     # Save residuals plots
     plt.savefig(file+'_residuals.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(file+'_residuals.png', format="png", bbox_inches="tight")
-    plt.show()
+    plt.close()
 
 
 def minimizer_result_to_dataframe(result, file):
@@ -307,6 +303,29 @@ def slice_area(spectra_set, no_of_slices=1, start=None, stop=None, slice_points=
         for x,y in enumerate(slices):
             Area[idx,x] =  np.trapz(y)
     return Area
+
+def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
+    # Get the current folder name
+    current_folder = os.path.basename(os.getcwd())
+    
+    # Read the CSV file, using the specified index column
+    df = pd.read_csv(filename, index_col=index_col)
+    
+    # Check if the current folder matches any values in the index (EXPNO)
+    if current_folder in df.index.astype(str):  # Convert index to string for comparison
+        # Filter the DataFrame to return only the row(s) that match the current folder name
+        matching_row = df.loc[current_folder]
+        
+        # Dictionary to store the column data as variables
+        variables = {}
+        
+        # Loop through the columns and store values in the dictionary
+        for column in df.columns:
+            variables[column] = matching_row[column] if isinstance(matching_row, pd.Series) else matching_row[column].values[0]
+        
+        return variables
+    else:
+        return f"No matching EXPNO found for folder: {current_folder}"
 ###################################################
 # Creation of fitting models
 ###################################################
@@ -333,12 +352,11 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
         tau = df_tail['Time']
 
     #Determine which data to fit in the tail
-        match space:
-            case 'ref':
+        if space=='ref':
                 I = df_tail['I_ref']
-            case 'diff':
+        elif space== 'diff':
                 I = df_tail['I_diff']
-            case 'sum':
+        elif space== 'sum':
                 I = df_tail['I_MQ']
         
     ##Fit the data to the model
@@ -352,36 +370,43 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
         df['I_MQ_no_tail'] = df['I_MQ']  - fitted
         df['I_nDQ'] = df['I_DQ'] / df['I_MQ_no_tail']
         df['Tail']= fitted
-   
-        plt.ylim(0.001, 1)    
-        plotmq(df['Time'],df['I_MQ'],df['I_DQ'],df['I_nDQ'],y_axis='log',
-               tail=df['Tail'],subtracted=df['I_MQ_no_tail'])
 
-        
         if a!=None: return tail_fit
+        
+        plt.ylim(0.001, 1)    
+        plotmq(df['Time'],df['I_MQ'],df['I_DQ'],df['I_nDQ'],y_axis='log', show=True,
+               tail=df['Tail'],subtracted=df['I_MQ_no_tail'])
         
         finish = int(input('Press 1 if you want another cutoff'))    
 
     return tail_fit
 
+def single_point(i): #i is a tuple in the form (dictionary,fixed value)
+    x,y=i[0],i[1]    
+    params = randomize_parameters(x['params'], x['range'])
+    params[x['fixed']].set(value=y,vary=False)
+    params['tail_beta'].set(value=1,vary=False)
+    lowest=x['fit'].minimize(method='leastsq',params=params)
+    for j in range(x['repeat']-1):
+        params = randomize_parameters(x['params'], x['range'])
+        params[x['fixed']].set(value=y,vary=False)
+        params['tail_beta'].set(value=1,vary=False)
+        temp =x['fit'].minimize(method='leastsq',params=params)
+        if temp.chisqr < lowest.chisqr:
+            lowest=temp
+    print(y,datetime.now(),lowest.chisqr)
+    return (y,lowest)
+
 
 #Simultaneous fit
-def fit_simultaneous(parameter,tau,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None,tail_cutoff=None,allow_overlap=False,scaling_function=fn.nothing):
-    if tail_cutoff is None:
-        tau_truncated=tau
-    else:
-        DQ=DQ[:tail_cutoff]
-        tau_truncated=tau[:tail_cutoff]
-       
-    residual_DQ = (scaling_function(DQ) - scaling_function(model_DQ.eval(parameter,tau=tau_truncated)))/max(DQ)
+def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None):
+    params=parameter.valuesdict()
     
-    residual_MQ = (scaling_function(MQ) - scaling_function(model_MQ.eval(parameter,tau=tau)))/max(MQ)
+    residual_DQ = (DQ - model_DQ(tau_truncated,params))/max(DQ)
     
-    residual = pd.concat([residual_DQ, residual_MQ])    
+    residual_MQ = (MQ - model_MQ(tau,params))/max(MQ)
     
-    #Penalize if the order of Dres and T2 are not correct
-    if allow_overlap==False:
-        residual = residual * extract_and_penalize(parameter,T2_penalty,Dres_penalty)
+    residual = np.append(residual_DQ, residual_MQ)    
     
     return residual #Minimization parameter
 

@@ -9,49 +9,50 @@ import os
 import shutil
 from datetime import datetime
 from scipy.stats import lognorm
+from multiprocessing import Pool
 
 #############################################
 #Definitions of constants and functions
 
-
-def DQ_intensity(tau, tail_A,
-                 first_Dres,first_sigma,first_T2,first_beta,first_A):  
+def DQ_intensity(tau,parameters):  
+        
+    first_comp= fn.DQ_dist_Dres_1_T2(tau, Dres_med=parameters['first_Dres'], Dres_sigma=parameters['first_sigma'],T2=parameters['first_T2'], A=parameters['first_A'], beta=parameters['first_beta'])   
     
-    first_comp= fn.DQ_dist_Dres_1_T2(tau, first_Dres,first_sigma, first_T2, first_A, first_beta)   
-    
-    intensity= first_comp 
+    intensity= first_comp
 
     return intensity
     
-def MQ_intensity_with_tail(tau, tail_T2, tail_beta, tail_A,
-                           first_T2,first_beta,first_A):
+def MQ_intensity_with_tail(tau,parameters):
     
-    first_comp = fn.T2_decay(tau, first_T2,first_A,first_beta)
+    elastic_comp=MQ_intensity_without_tail(tau,parameters)
     
-    tail_comp = fn.T2_decay(tau, tail_T2,tail_A,tail_beta)
+    tail_comp = fn.T2_decay(tau, T2=parameters['tail_T2'], A=parameters['tail_A'], beta=parameters['tail_beta'])
     
-    intensity = first_comp + tail_comp
+    intensity = elastic_comp + tail_comp
     return intensity
 
-def MQ_intensity_without_tail(tau, tail_A,
-                           first_T2,first_beta,first_A):
+def MQ_intensity_without_tail(tau,parameters):
     
-    first_comp = fn.T2_decay(tau, first_T2,first_A,first_beta)
+    first_comp = fn.T2_decay(tau, T2=parameters['first_T2'], A=parameters['first_A'], beta=parameters['first_beta'])
     
     intensity = first_comp
     return intensity
+
 #############################################
 
-
+a=datetime.now()
+print(a)
 ##############################################
 #Variable Declarations
 ##############################################
 
-data_cutoff=None #Cutoff for excess data points
-tail_cutoff=None #Start point for tail fitting
-DQ_cutoff=None #Final point for DQ curve fitting
+exp_info = oth.read_exp_parameters()
 
-tail_freedom=0.1 #Percentage freedeom for tail to vary later
+data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
+tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
+DQ_cutoff=tail_cutoff #Final point for DQ curve fitting
+
+tail_freedom=0.05 #Percentage freedeom for tail to vary later
 
 
 connectivity=['first'] #Number of components
@@ -100,7 +101,7 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.0001, 0.5), 'first_sigma': (0.001, 0.5), 'first_T2': (0.5, tail_result['T2']), 'first_A': (0.01, 0.99), 'first_beta': (0.5, 2),
+    'first_Dres': (0.0001, 0.5), 'first_sigma': (0.001, 5), 'first_T2': (0.5, tail_result['T2']), 'first_A': (0.01, 0.99), 'first_beta': (0.5, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
     'tail_beta': (0.5, 2)
@@ -141,20 +142,20 @@ if tail_subtraction:
 tau=df['Time']
 DQ=df['I_DQ']
 
-IDQ_model=lm.Model(DQ_intensity)
+IDQ_model=DQ_intensity
  
 
 
 DQ_lim= len(df[df['Time']<=DQ_cutoff].index)
  
 if tail_subtraction:
-    IMQ_model=lm.Model(MQ_intensity_without_tail)
+    IMQ_model=MQ_intensity_without_tail
     MQ=df['I_MQ_no_tail']
     fitMQ=MQ[:DQ_lim]
     fittau=tau[:DQ_lim]
     fitDQ=DQ[:DQ_lim]
 else:
-    IMQ_model=lm.Model(MQ_intensity_with_tail)
+    IMQ_model=MQ_intensity_with_tail
     MQ=df['I_MQ']
     fitMQ=MQ
     fittau=tau
@@ -171,42 +172,42 @@ else:
 #Simultaneous fitting of DQ and MQ curve
 sim_fit=lm.Minimizer(
     oth.fit_simultaneous,DQ_params,
-    fcn_args=(fittau,fitDQ,fitMQ,IDQ_model,IMQ_model,T2_penalty,Dres_penalty,DQ_lim),
-    max_nfev=10000000)
-
-search=False
+    fcn_args=(fittau,fittau[:DQ_lim],fitDQ[:DQ_lim],fitMQ,IDQ_model,IMQ_model,T2_penalty,Dres_penalty))
+  
+search=True
 repeat=5
 
 if search is True:
-    A=np.arange(0.1, 0.9,0.01)
-    parameter= 'first_A'
-    search_result=[]
+    A=np.arange(0.1, 4,0.1)
+    parameter= 'first_sigma'
+    fitter={
+        'params':DQ_params,
+        'fixed':parameter,
+        'range':ranges,
+        'fit':sim_fit,
+        'repeat':repeat
+        }
+    space= [(fitter,k) for k in A]
+    pool= Pool()
+    search_result=pool.map(oth.single_point,space)
 
-    for x in A:
-        DQ_params = oth.randomize_parameters(DQ_params, ranges)
-        DQ_params[parameter].set(value=x,vary=False)
-        lowest=sim_fit.minimize(method='leastsq',params=DQ_params)
-        for x in range(repeat-1):
-            temp =sim_fit.minimize(method='leastsq',params=DQ_params)
-            if temp.chisqr < lowest.chisqr:
-                lowest=temp
-        search_result.append(lowest)
-    
     #Write Chi-square vs a to the file
-    chi_sqr =[a.chisqr for a in search_result]
+    chi_sqr =[(x,y.chisqr) for (x,y) in search_result]
     
-    np.savetxt(file+"_chisqr.txt", list(zip(A,chi_sqr)),delimiter=',',comments='',header='A,chi_sqr')
-      
-    plt.plot(A, chi_sqr)
+    np.savetxt(file+"_chisqr.txt", chi_sqr,delimiter=',',comments='',header='A,chi_sqr')
+    
+    chi_min=min([y for (x,y) in chi_sqr])
+    plt.plot(*zip(*chi_sqr))
+    plt.ylim(chi_min*0.99, chi_min*1.3)
     plt.savefig(file+'_chisqr.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(file+'_chisqr.png', format="png", bbox_inches="tight")
-    plt.show()
+    plt.close()
 
     #Pickel the minimizer result object
     oth.write_object(search_result,file+'_search.pckl')
-    
+    np.argmin([y for (x,y) in chi_sqr])
 
-    sim_fitted= search_result[chi_sqr.index(min(chi_sqr))]
+    sim_fitted= search_result[np.argmin([y for (x,y) in chi_sqr])][1]
 
 else:
 
@@ -231,7 +232,7 @@ for x in connectivity:
 # Full DQ Fit
 fitted_points_DQ = {
     **components_DQ,
-    'Full_Fit_': IDQ_model.eval(params=sim_fitted.params, tau=fittau)
+    'Full_Fit_': IDQ_model(fittau,result)
 }
 
 # Calculate MQ components
@@ -246,7 +247,7 @@ if not tail_subtraction:
 # Full MQ Fit
 fitted_points_MQ = {
     **components_MQ,
-    'Full_Fit_': IMQ_model.eval(params=sim_fitted.params, tau=fittau)
+    'Full_Fit_': IMQ_model(fittau,result)
 }
 
 
@@ -259,14 +260,22 @@ oth.plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
 
 #Plot of the Dres distribution
 prob = {}
+Dres = {}
 for x in connectivity:
     lower,upper=lognorm.interval(0.99, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
-    Dres =np.linspace(lower,upper,1000)
-    prob[x]=lognorm.pdf(Dres, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
-    plt.plot(Dres, prob[x],label=x)    
+    Dres[x] =np.linspace(lower,upper,1000)
+    prob[x] =lognorm.pdf(Dres[x], result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    plt.plot(Dres[x], prob[x],label=x)    
 plt.savefig(file+'_Dres.pdf', format="pdf", bbox_inches="tight")
 plt.savefig(file+'_Dres.png', format="png", bbox_inches="tight")
-plt.show()
+plt.close()
+
+##############################################
+#Create a result dataframe and write outputs to file
+##############################################
+
+df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted)
+
 ##############################################
 #Calculate confidence interval
 ##############################################
@@ -286,8 +295,7 @@ if calculate_ci is True:
     oth.write_object(ci,file+'_ci.pckl')
     oth.write_object(trace,file+'_ci-trace.pckl')
 
-##############################################
-#Create a result dataframe and write outputs to file
-##############################################
+b=datetime.now()
+print(b)
 
-df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted)
+print(f'Execution time is {b-a}')
