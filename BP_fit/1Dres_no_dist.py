@@ -54,7 +54,7 @@ DQ_cutoff=tail_cutoff #Final point for DQ curve fitting
 tail_freedom=0.1 #Percentage freedeom for tail to vary later
 
 
-connectivity=['first','second'] #Number of components
+connectivity=['first'] #Number of components
 
 #Define overlap penalty
 T2_penalty=dict(amount=1, width=1)
