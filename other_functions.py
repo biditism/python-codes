@@ -186,22 +186,23 @@ def plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
     plt.xscale('log')
     plotmq(tau, DQ, y_axis='log', save=file+'_IDQ_loglog', **fitted_points_DQ)
     
-    # Plot MQ data with log-log scale
-    plt.xscale('log')
-    plotmq(tau, MQ, y_axis='log', save=file+'_IMQ_loglog', **fitted_points_MQ)
-    
     # Plot DQ data with linear-log scale
     plt.xscale('linear')
     plt.xlim(0, DQ_cutoff * 1.5)
     plotmq(tau, DQ, y_axis='log', save=file+'_IDQ_linlog', **fitted_points_DQ)
+    
+    # Plot MQ data with log-log scale
+    plt.xscale('log')
+    plotmq(tau, MQ, y_axis='log', save=file+'_IMQ_loglog', **fitted_points_MQ)
     
     # Plot MQ data with linear-log scale
     plt.xscale('linear')
     plotmq(tau, MQ, y_axis='log', save=file+'_IMQ_linlog', **fitted_points_MQ)
     
     # Plot residuals
-    plt.plot(tau, DQ - fitted_points_DQ['Full_Fit_'], label='DQ Residual')
     plt.plot(tau, MQ - fitted_points_MQ['Full_Fit_'], label='MQ Residual')
+    plt.plot(tau, DQ - fitted_points_DQ['Full_Fit_'], label='DQ Residual')
+    
     plt.legend(loc='upper right')
     
     # Save residuals plots
@@ -214,8 +215,8 @@ def minimizer_result_to_dataframe(result, file):
     """
     Convert lmfit.MinimizerResult parameters to a pandas DataFrame.
 
-    :param result: lmfit.MinimizerResult object containing the fit results
-    :param file: String to be used as the sample name for all rows
+    :result: lmfit.MinimizerResult object containing the fit results
+    :file: String to be used as the sample name for all rows
     :return: pandas DataFrame with parameter details and a sample column
     """
     # Extract parameter details
@@ -248,7 +249,7 @@ def minimizer_result_to_dataframe(result, file):
     
     return df
 
-#Write results to file and make a bakup
+#Write results to file and make a bakup for simultaneous fit
 def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
     #dump final parameters to a file
     f = open(file+"_fit_parameters.json", "w")
@@ -288,6 +289,46 @@ def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
             shutil.copy2(f, path)
     
     return df_result
+
+#Write results to file and make a bakup for InDQ fit
+def files_report_InDQ(df,file,fitted_points_nDQ,fitted):
+    #dump final parameters to a file
+    f = open(file+"_fit_parameters.json", "w")
+    fitted.params.dump(f)
+    f.close()  
+    
+    
+    #Write the fitted data points to file
+    df_nDQ = pd.DataFrame(fitted_points_nDQ).add_suffix('nDQ')
+    df_result = df.copy().assign(**df_nDQ)
+    df_result = df_result.assign(Sample=file)
+    df_result.to_csv(file+'_fit_value.csv',index=False)
+    
+    print(lm.fit_report(fitted))
+    
+    #Write fit report to the file
+    file1 = open(file+"_fit_report.txt", "w")
+    print(lm.fit_report(fitted),file=file1)
+    file1.close()
+    
+    #Write fit report in dataframe fromat
+    df_params = minimizer_result_to_dataframe(fitted, file)
+    df_params.to_csv(file+'_fit_report.csv',index=False)
+    
+    
+    #Pickel the minimizer result object
+    write_object(fitted,file+'_minimized.pckl')
+    
+    now=datetime.now()
+    path='./temp/'+ now.strftime('%Y%m%d%H%M%S')+'/'
+    os.makedirs(path,exist_ok=True)
+    
+    for f in os.listdir(os.curdir):
+        if f.startswith(file):
+            shutil.copy2(f, path)
+    
+    return df_result
+
 
 #Function for slicing a spectra
 def spectra_slice(spectra, no_of_slices=1, start=None, stop=None, slice_points=None):
@@ -407,6 +448,15 @@ def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_pena
     residual_MQ = (MQ - model_MQ(tau,params))/max(MQ)
     
     residual = np.append(residual_DQ, residual_MQ)    
+    
+    return residual #Minimization parameter
+
+#Simultaneous fit
+def fit_single(parameter,model,x,y):
+    
+    params=parameter.valuesdict()
+    
+    residual = (y - model(x,params))  
     
     return residual #Minimization parameter
 

@@ -8,20 +8,21 @@ import other_functions as oth
 import os
 import shutil
 from datetime import datetime
+from scipy.stats import lognorm
 from multiprocessing import Pool
 
 #############################################
 #Definitions of constants and functions
 
-
 def DQ_intensity(tau,parameters):  
         
-    first_comp= fn.abragam(tau, Dres=parameters['first_Dres'], A=parameters['first_A'])   
+    first_comp= fn.abragam_dist(tau, Dres_med=parameters['first_Dres'], Dres_sigma=parameters['first_sigma'], A=parameters['first_A'])   
     
     intensity= first_comp
 
     return intensity
     
+
 #############################################
 
 a=datetime.now()
@@ -37,8 +38,8 @@ tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
 DQ_cutoff=tail_cutoff #Final point for DQ curve fitting
 
 
-connectivity=['first'] #Number of components
 
+connectivity=['first'] #Number of components
 
 
 ##############################################
@@ -78,7 +79,7 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.8, 0.0001), 'first_A': (0.01, 0.99)
+    'first_Dres': (0.0001, 0.5), 'first_sigma': (0.001, 5), 'first_A': (0.01, 0.99)
 }
 
 
@@ -103,7 +104,6 @@ DQ_params = oth.randomize_parameters(DQ_params, ranges)
 #Define DQ and MQ models and other variables
 ##############################################
 
-
 tau=df['Time']
 DQ=df['I_DQ']
 nDQ=df['I_nDQ']
@@ -112,6 +112,7 @@ MQ=df['I_MQ']
 IDQ_model=DQ_intensity
  
 DQ_lim= len(df[df['Time']<=DQ_cutoff].index)
+
 
 # #=============================================================================
 # #Define fittng function
@@ -133,7 +134,8 @@ result=fitted.params.valuesdict()
 
 components_nDQ = {}
 for x in connectivity:
-    components_nDQ[x] = fn.abragam(tau, result[f'{x}_Dres'],result[f'{x}_A'])
+    components_nDQ[x] = fn.abragam_dist(tau, result[f'{x}_Dres'], result[f'{x}_sigma'], 
+                                         result[f'{x}_A'])
 
 # Full DQ Fit
 fitted_points_nDQ = {
@@ -147,6 +149,7 @@ fitted_points_nDQ = {
 #Plot and save graphs
 ##############################################
 
+
 # Plot DQ data with linear-log scale
 plt.xlim(0, DQ_cutoff * 1.5)
 oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_nDQ)
@@ -155,6 +158,18 @@ oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_n
 plt.xlim(0, DQ_cutoff * 1.5)
 oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_nDQ)
 
+
+#Plot of the Dres distribution
+prob = {}
+Dres = {}
+for x in connectivity:
+    lower,upper=lognorm.interval(0.99, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    Dres[x] =np.linspace(lower,upper,1000)
+    prob[x] =lognorm.pdf(Dres[x], result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    plt.plot(Dres[x], prob[x],label=x)    
+plt.savefig(file+'_Dres.pdf', format="pdf", bbox_inches="tight")
+plt.savefig(file+'_Dres.png', format="png", bbox_inches="tight")
+plt.close()
 
 ##############################################
 #Create a result dataframe and write outputs to file
