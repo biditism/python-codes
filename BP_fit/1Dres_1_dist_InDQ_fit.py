@@ -111,7 +111,7 @@ MQ=df['I_MQ']
 
 IDQ_model=DQ_intensity
  
-DQ_lim= len(df[df['Time']<=DQ_cutoff].index)
+DQ_lim= len(df[df['Time']<=(DQ_cutoff*0.8)].index)
 
 
 # #=============================================================================
@@ -156,7 +156,7 @@ oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_n
 
 # Plot DQ data with linear-linear scale
 plt.xlim(0, DQ_cutoff * 1.5)
-oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_nDQ)
+oth.plotmq(tau, DQ, MQ, nDQ, y_axis='linear', save=file+'linlin', **fitted_points_nDQ)
 
 
 #Plot of the Dres distribution

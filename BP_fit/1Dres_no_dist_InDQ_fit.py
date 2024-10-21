@@ -153,7 +153,7 @@ oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_n
 
 # Plot DQ data with linear-linear scale
 plt.xlim(0, DQ_cutoff * 1.5)
-oth.plotmq(tau, DQ, MQ, nDQ, y_axis='log', save=file+'linlog', **fitted_points_nDQ)
+oth.plotmq(tau, DQ, MQ, nDQ, y_axis='linear', save=file+'linlin', **fitted_points_nDQ)
 
 
 ##############################################

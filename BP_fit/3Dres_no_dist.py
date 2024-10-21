@@ -108,9 +108,9 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.04, 0.5), 'first_T2': (1, 25), 'first_A': (0.01, 0.99), 'first_beta': (0.8, 2),
-    'second_Dres': (0.008, 0.04), 'second_T2': (25, 50), 'second_A': (0.01, 0.99), 'second_beta': (0.8, 2),
-    'third_Dres': (0.0005, 0.008), 'third_T2': (50, tail_result['T2']), 'third_A': (0.01, 0.99), 'third_beta': (0.8, 2),
+    'first_Dres': (0.8, 0.0001), 'first_T2': (1, 200), 'first_A': (0.01, 0.99), 'first_beta': (0.8, 2),
+    'second_Dres': (0.8, 0.0001), 'second_T2': (1, 200), 'second_A': (0.01, 0.99), 'second_beta': (0.8, 2),
+    'third_Dres': (0.8, 0.0001), 'third_T2': (1, tail_result['T2']), 'third_A': (0.01, 0.99), 'third_beta': (0.8, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
     'tail_beta': (0.5, 2)
@@ -201,45 +201,30 @@ if search is True:
         'params':DQ_params,
         'fixed':parameter,
         'range':ranges,
-        'fit':sim_fit
+        'fit':sim_fit,
+        'repeat':repeat
         }
     space= [(fitter,k) for k in A]
     pool= Pool()
     search_result=pool.map(oth.single_point,space)
 
-
-# if search is True:
-#     A=np.arange(0.1, 0.9,0.01)
-#     parameter= 'first_A'
-#     search_result=[]
-
-#     for i in A:
-#         DQ_params = oth.randomize_parameters(DQ_params, ranges)
-#         DQ_params[parameter].set(value=i,vary=False)
-#         lowest=sim_fit.minimize(method='leastsq',params=DQ_params)
-#         for j in range(repeat-1):
-#             DQ_params = oth.randomize_parameters(DQ_params, ranges)
-#             temp =sim_fit.minimize(method='leastsq',params=DQ_params)
-#             if temp.chisqr < lowest.chisqr:
-#                 lowest=temp
-#         search_result.append(lowest)
-#         print(i,lowest.chisqr,datetime.now())
     #Write Chi-square vs a to the file
     chi_sqr =[(x,y.chisqr) for (x,y) in search_result]
     
     np.savetxt(file+"_chisqr.txt", chi_sqr,delimiter=',',comments='',header='A,chi_sqr')
       
+    chi_min=min([y for (x,y) in chi_sqr])
     plt.plot(*zip(*chi_sqr))
-    plt.ylim(min(chi_sqr), min(chi_sqr)*1.5)
+    plt.ylim(chi_min*0.99, chi_min*1.3)
     plt.savefig(file+'_chisqr.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(file+'_chisqr.png', format="png", bbox_inches="tight")
     plt.close()
 
     #Pickel the minimizer result object
     oth.write_object(search_result,file+'_search.pckl')
-    
+    np.argmin([y for (x,y) in chi_sqr])
 
-    sim_fitted= search_result[np.argmin(chi_sqr)][1]
+    sim_fitted= search_result[np.argmin([y for (x,y) in chi_sqr])][1]
 
 else:
 
