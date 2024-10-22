@@ -146,10 +146,17 @@ if tail_subtraction:
 
 
 # Define the difference of T2 and Dres values as parameters
-DQ_params.add('diff_Dres_1', expr='first_Dres-second_Dres',min=0)
-DQ_params.add('diff_T2_1', expr='second_T2-first_T2',min=0)
-DQ_params.add('diff_Dres_2', expr='second_Dres-third_Dres',min=0)
-DQ_params.add('diff_T2_2', expr='third_T2-second_T2',min=0)
+DQ_params.add('diff_Dres_1',min=0)
+DQ_params['second_Dres'].set(expr='first_Dres - diff_Dres_1')
+
+DQ_params.add('diff_T2_1',min=0)
+DQ_params['second_T2'].set(expr='first_T2 + diff_T2_1')
+
+DQ_params.add('diff_Dres_2',min=0)
+DQ_params['third_Dres'].set(expr='second_Dres - diff_Dres_2')
+
+DQ_params.add('diff_T2_2',min=0)
+DQ_params['third_T2'].set(expr='second_T2 + diff_T2_2')
 
 
 ##############################################

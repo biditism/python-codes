@@ -100,7 +100,7 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
         while finish ==1:
             cutoff = float(input('Enter the time cutoff for further calculations'))
             df_check = df[df['Time'] <= cutoff].copy()
-            plotmq(df_check['Time'],df_check['I_DQ'],df_check['I_ref'],y_axis='log')
+            plotmq(df_check['Time'],df_check['I_DQ'],df_check['I_ref'],y_axis='log',show=True)
             finish = int(input('Press 1 if you want another cutoff'))
 
     df_new = df[df['Time'] <= cutoff].copy()
@@ -372,7 +372,7 @@ def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
 ###################################################
 
 #Tail sustraction
-def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='diff'):
+def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='ref'):
     #Ready the model   
     if tail_model==None: tail_model=lm.Model(fn.T2_decay)
 
