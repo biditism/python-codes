@@ -223,6 +223,8 @@ if search is True:
     chi_min=min([y for (x,y) in chi_sqr])
     plt.plot(*zip(*chi_sqr))
     plt.ylim(chi_min*0.99, chi_min*1.3)
+    plt.xlabel(f'{parameter}')
+    plt.ylabel("Chi-Square")
     plt.savefig(file+'_chisqr.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(file+'_chisqr.png', format="png", bbox_inches="tight")
     plt.close()
