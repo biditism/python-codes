@@ -59,7 +59,7 @@ data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
 tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
 DQ_cutoff=tail_cutoff #Final point for DQ curve fitting
 
-tail_freedom=0.1 #Percentage freedeom for tail to vary later
+tail_freedom=0.001 #Percentage freedeom for tail to vary later
 
 
 connectivity=['first','second','third'] #Number of components
@@ -146,17 +146,17 @@ if tail_subtraction:
 
 
 # Define the difference of T2 and Dres values as parameters
-DQ_params.add('diff_Dres_1',min=0)
-DQ_params['second_Dres'].set(expr='first_Dres - diff_Dres_1')
+DQ_params.add('diff_Dres_1',min=0,max=1)
+DQ_params['second_Dres'].set(expr='first_Dres * diff_Dres_1')
 
-DQ_params.add('diff_T2_1',min=0)
-DQ_params['second_T2'].set(expr='first_T2 + diff_T2_1')
+DQ_params.add('diff_T2_1',min=1)
+DQ_params['second_T2'].set(expr='first_T2 * diff_T2_1')
 
-DQ_params.add('diff_Dres_2',min=0)
-DQ_params['third_Dres'].set(expr='second_Dres - diff_Dres_2')
+DQ_params.add('diff_Dres_2',min=0,max=1)
+DQ_params['third_Dres'].set(expr='second_Dres * diff_Dres_2')
 
-DQ_params.add('diff_T2_2',min=0)
-DQ_params['third_T2'].set(expr='second_T2 + diff_T2_2')
+DQ_params.add('diff_T2_2',min=1)
+DQ_params['third_T2'].set(expr='second_T2 * diff_T2_2')
 
 
 ##############################################
@@ -198,7 +198,7 @@ sim_fit=lm.Minimizer(
     oth.fit_simultaneous,DQ_params,
     fcn_args=(fittau,fittau[:DQ_lim],fitDQ[:DQ_lim],fitMQ,IDQ_model,IMQ_model,T2_penalty,Dres_penalty))
   
-search=True
+search=False
 repeat=5
 
 if search is True:
