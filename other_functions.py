@@ -59,15 +59,18 @@ def rawdata(filename="BP_303.txt",sample=None):
     return df,sample
 
 #Normalization to the first point of the data and cutoff extra data
-def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
+def clean(df,cutoff=None,DQ_cutoff=None,omit=None,k=4,norm_factor=None):
     
     
     #Remove the unnecessary Im axis
     df=df.drop(['Im'],axis=1)
     
+    #Remove points with artefacts
     if omit is not None:
-        df = df[~df.Time.isin(omit)]
-
+        print("No of experimental points:",df.shape[0])
+        df = df.drop(omit-1)
+        print("No of experimental points after artefact removal:",df.shape[0])
+    
     a=0
     if df['Time'][0] == 0:
         print('Measured zero time Iref=',df['I_ref'][0]) 
@@ -85,7 +88,8 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
     
     #test()
     
-    
+    if DQ_cutoff is not None:
+        df.loc[df.Time > DQ_cutoff, 'I_DQ'] = 0
     
     if norm_factor==None: norm_factor = df['I_DQ'][0] + df['I_ref'][0]
     df['I_DQ'] = df['I_DQ'] / norm_factor
@@ -107,6 +111,9 @@ def clean(df,cutoff=None,omit=None,k=4,norm_factor=None):
 
     if cutoff==None:
         plotmq(df_new['Time'],df_new['I_DQ'],df_new['I_ref'],y_axis='log')
+    
+    
+    
     return df_new
 
 #Scatter plot of multiple files
@@ -233,16 +240,17 @@ def minimizer_result_to_dataframe(result, file):
     }
 
     for param_name, param in result.params.items():
-        fraction, quantity = param_name.split('_', 1)
-        data['Sample'].append(file)
-        data['Fraction'].append(fraction)
-        data['Quantity'].append(quantity)
-        data['Parameter'].append(param_name)
-        data['Value'].append(param.value)
-        data['Error'].append(param.stderr)
-        data['Min'].append(param.min)
-        data['Max'].append(param.max)
-        data['Vary'].append(param.vary)
+        if 'diff' not in param_name:
+            fraction, quantity = param_name.split('_', 1)
+            data['Sample'].append(file)
+            data['Fraction'].append(fraction)
+            data['Quantity'].append(quantity)
+            data['Parameter'].append(param_name)
+            data['Value'].append(param.value)
+            data['Error'].append(param.stderr)
+            data['Min'].append(param.min)
+            data['Max'].append(param.max)
+            data['Vary'].append(param.vary)
 
     # Create DataFrame
     df = pd.DataFrame(data)
@@ -367,12 +375,24 @@ def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
         return variables
     else:
         return f"No matching EXPNO found for folder: {current_folder}"
+
+def single_ci2d(i): #i is a tuple in the form (dictionary,tuple)
+    fitter,params=i[0],i[1]
+    x,y,grid = lm.conf_interval2d(fitter['minimizer'], fitter['result'], params[0], params[1])    
+
+    return (params,x,y,grid)
+
+##Update intial values and bounds to new parameter values
+def update_bounds(parameter,value_dict,change=None,width=0.4):
+    for key,values in value_dict.items():
+        parameter[key].set(value=values,min=values*(1-width),max=values*(1+width))
+    return parameter
 ###################################################
 # Creation of fitting models
 ###################################################
 
 #Tail sustraction
-def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='ref'):
+def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='diff'):
     #Ready the model   
     if tail_model==None: tail_model=lm.Model(fn.T2_decay)
 
@@ -440,15 +460,15 @@ def single_point(i): #i is a tuple in the form (dictionary,fixed value)
 
 
 #Simultaneous fit
-def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None):
+def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None, scale=fn.nothing):
     params=parameter.valuesdict()
     
-    residual_DQ = (DQ - model_DQ(tau_truncated,params))/max(DQ)
+    residual_DQ = (scale(DQ) - scale(model_DQ(tau_truncated,params)))/scale(max(DQ))
     
-    residual_MQ = (MQ - model_MQ(tau,params))/max(MQ)
+    residual_MQ = (scale(MQ) - scale(model_MQ(tau,params)))/scale(max(MQ))
     
     residual = np.append(residual_DQ, residual_MQ)    
-    
+
     return residual #Minimization parameter
 
 #Simultaneous fit
