@@ -49,7 +49,7 @@ exp_info = oth.read_exp_parameters()
 
 data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
 tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
-DQ_cutoff=tail_cutoff #Final point for DQ curve fitting
+DQ_cutoff=exp_info['DQ_cutoff'] #Final point for DQ curve fitting
 
 tail_freedom=0.1 #Percentage freedeom for tail to vary later
 
@@ -75,7 +75,9 @@ df_main = df.copy() #Backup of original table
 
 #Cleaning of data
 
-df = oth.clean(df,data_cutoff)
+omit_points=None
+
+df = oth.clean(df,data_cutoff,DQ_cutoff,omit=omit_points)
 
 
 ##############################################
@@ -100,7 +102,7 @@ file1.close()
 ###############################################
 
 ranges = {
-    'first_Dres': (0.8, 0.0001), 'first_T2': (1, 50), 'first_A': (0.01, 0.99), 'first_beta': (0.8, 2),
+    'first_Dres': (0.8, 0.0001), 'first_T2': (0, tail_result['T2']), 'first_A': (0.01, 0.99), 'first_beta': (0.8, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
     'tail_beta': (0.5, 2)
@@ -133,7 +135,8 @@ if tail_subtraction:
     DQ_params['tail_T2'].set(value=tail_result['T2'],vary=False)
     DQ_params['tail_A'].set(value=tail_result['A'],vary=False)
     
-
+DQ_params.add('diff_T2_1',value=0.1,min=0,max=1)
+DQ_params['first_T2'].set(expr='tail_T2 * diff_T2_1')
 
 ##############################################
 #Define DQ and MQ models and other variables
@@ -164,17 +167,37 @@ else:
 
 
 
-# #=============================================================================
-# #Single fit for parameter initialization
-# #=============================================================================
-
-
 #Simultaneous fitting of DQ and MQ curve
 sim_fit=lm.Minimizer(
     oth.fit_simultaneous,DQ_params,
     fcn_args=(fittau,fittau[:DQ_lim],fitDQ[:DQ_lim],fitMQ,IDQ_model,IMQ_model,T2_penalty,Dres_penalty))
+
+# #=============================================================================
+# #Initial fit for parameter initialization
+# #=============================================================================
+read= False
+
+if read is True:
+    DQ_params= oth.load_object('last_fit_result.pckl')
+    sim_fitted= sim_fit.minimize(method='leastsq',params=DQ_params)
+else:
+    sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
+    oth.write_object(sim_fitted.params,'last_fit_result.pckl')
+
   
-search=True
+temp=sim_fitted.params.valuesdict()
+
+change=[]
+for x in connectivity:
+    for y in ["_Dres","_T2"]:
+        change.append(f'{x}{y}')
+
+update_list={key: temp[key] for key in change}
+   
+DQ_params=oth.update_bounds(DQ_params, update_list)
+
+  
+search=False
 repeat=5
 
 if search is True:
@@ -208,10 +231,6 @@ if search is True:
     np.argmin([y for (x,y) in chi_sqr])
 
     sim_fitted= search_result[np.argmin([y for (x,y) in chi_sqr])][1]
-
-else:
-
-    sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
 
 
 print(sim_fitted.params.pretty_print())
@@ -271,18 +290,65 @@ df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted
 
 calculate_ci=False
 
+ci_params=['first_A','first_Dres','first_T2']
+ci2d_pairs=[]
+for i in range(len(ci_params)):
+    for j in range(i+1,len(ci_params)):
+        ci2d_pairs.append((ci_params[i],ci_params[j]))
+
+
 if calculate_ci is True:
     for p in sim_fitted.params:
-        if sim_fitted.params[p].stderr is None:
-            sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.1)
+        sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.2)
 
-    ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True)
 
-    lm.printfuncs.report_ci(ci)
+    try:
+        ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
 
-    #Pickel the confidence interval object
-    oth.write_object(ci,file+'_ci.pckl')
-    oth.write_object(trace,file+'_ci-trace.pckl')
+    except Exception as error:
+        print("CI not calculated",error)
+    else:
+        lm.ci_report(ci)
+
+        #Write fit report to the file
+        file1 = open(file+"_conf_interval.txt", "w")
+        print(lm.ci_report(ci),file=file1)
+        file1.close()
+
+        #Pickel the confidence interval object
+        oth.write_object(ci,file+'_ci.pckl')
+        oth.write_object(trace,file+'_ci-trace.pckl')
+
+    ci_dict={
+        'minimizer': sim_fit,
+        'result': sim_fitted
+    }
+    ci_space= [(ci_dict,k) for k in ci2d_pairs]
+    pool= Pool()
+    ci2d_result=pool.map(oth.single_ci2d,ci_space)
+
+    #Pickel the confidence interval 2d object
+    oth.write_object(ci2d_result,file+'_ci2d.pckl')
+
+    fig,ax=plt.subplots(len(ci2d_result)//3,3)
+
+    for idx,result in enumerate(ci2d_result):
+        i,j=idx//3,idx % 3
+        pair,x,y,grid=result[0],result[1],result[2],result[3]
+        # Plot chi-sqr
+        ax[i,j].contour(x,y,grid)
+        ax[i,j].set_xlabel(pair[0],horizontalalignment='left')
+        ax[i,j].xaxis.set_label_coords(0.1,0.1)
+        ax[i,j].set_ylabel(pair[1],verticalalignment='bottom')
+        ax[i,j].yaxis.set_label_coords(0.1,0.35)
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
+    fig.colorbar(plt.cm.ScalarMappable(), cax=cbar_ax)
+    fig.set_size_inches(16,12)
+    plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
+    plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
+    plt.close()
+
 
 b=datetime.now()
 print(b)

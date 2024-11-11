@@ -61,7 +61,7 @@ data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
 tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
 DQ_cutoff=exp_info['DQ_cutoff'] #Final point for DQ curve fitting
 
-tail_freedom=0.1 #Percentage freedeom for tail to vary later
+tail_freedom=0.05 #Percentage freedeom for tail to vary later
 
 
 connectivity=['first','second','third'] #Number of components
@@ -85,7 +85,7 @@ df_main = df.copy() #Backup of original table
 
 #Cleaning of data
 
-omit_points=np.array([129,128,126,125,123,122,114,112,111,109,108,106,105,102,100,99,84,83,82,81])
+omit_points=None
 
 
 df = oth.clean(df,data_cutoff,DQ_cutoff,omit=omit_points)
@@ -215,7 +215,15 @@ sim_fit=lm.Minimizer(
 # #=============================================================================
 # #Initial fit for parameter initialization
 # #=============================================================================
-sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
+read= False
+
+if read is True:
+    DQ_params= oth.load_object('last_fit_result.pckl')
+    sim_fitted= sim_fit.minimize(method='leastsq',params=DQ_params)
+else:
+    sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
+    oth.write_object(sim_fitted.params,'last_fit_result.pckl')
+
   
 temp=sim_fitted.params.valuesdict()
 
@@ -227,6 +235,7 @@ for x in connectivity:
 update_list={key: temp[key] for key in change}
    
 DQ_params=oth.update_bounds(DQ_params, update_list)
+
 
 
 search=False
@@ -326,7 +335,7 @@ df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted
 
 calculate_ci=False
 
-ci_params=['first_A','second_A','third_A','first_Dres','second_Dres','third_Dres']
+ci_params=['first_A','second_A','third_A','first_Dres','first_T2','second_T2']
 ci2d_pairs=[]
 for i in range(len(ci_params)):
     for j in range(i+1,len(ci_params)):
@@ -335,21 +344,25 @@ for i in range(len(ci_params)):
 
 if calculate_ci is True:
     for p in sim_fitted.params:
-        if sim_fitted.params[p].stderr is None:
-            sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.1)
+        sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.2)
 
-    # ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
 
-    # lm.ci_report(ci)
+    try:
+        ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
 
-    # #Write fit report to the file
-    # file1 = open(file+"_conf_interval.txt", "w")
-    # print(lm.ci_report(ci),file=file1)
-    # file1.close()
+    except Exception as error:
+        print("CI not calculated",error)
+    else:
+        lm.ci_report(ci)
 
-    # #Pickel the confidence interval object
-    # oth.write_object(ci,file+'_ci.pckl')
-    # oth.write_object(trace,file+'_ci-trace.pckl')
+        #Write fit report to the file
+        file1 = open(file+"_conf_interval.txt", "w")
+        print(lm.ci_report(ci),file=file1)
+        file1.close()
+
+        #Pickel the confidence interval object
+        oth.write_object(ci,file+'_ci.pckl')
+        oth.write_object(trace,file+'_ci-trace.pckl')
 
     ci_dict={
         'minimizer': sim_fit,
@@ -361,6 +374,25 @@ if calculate_ci is True:
 
     #Pickel the confidence interval 2d object
     oth.write_object(ci2d_result,file+'_ci2d.pckl')
+
+    fig,ax=plt.subplots(len(ci2d_result)//3,3)
+
+    for idx,result in enumerate(ci2d_result):
+        i,j=idx//3,idx % 3
+        pair,x,y,grid=result[0],result[1],result[2],result[3]
+        # Plot chi-sqr
+        ax[i,j].contour(x,y,grid)
+        ax[i,j].set_xlabel(pair[0],horizontalalignment='left')
+        ax[i,j].xaxis.set_label_coords(0.1,0.1)
+        ax[i,j].set_ylabel(pair[1],verticalalignment='bottom')
+        ax[i,j].yaxis.set_label_coords(0.1,0.35)
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
+    fig.colorbar(plt.cm.ScalarMappable(), cax=cbar_ax)
+    fig.set_size_inches(16,12)
+    plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
+    plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
+    plt.close()
 
 
 b=datetime.now()

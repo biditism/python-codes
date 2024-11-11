@@ -83,7 +83,7 @@ df_main = df.copy() #Backup of original table
 
 #Cleaning of data
 
-omit_points=np.array([129,128,126,125,123,122,114,112,111,109,108,106,105,102,100,99,84,83,82,81])
+omit_points=None
 
 df = oth.clean(df,data_cutoff,DQ_cutoff,omit=omit_points)
 
@@ -319,7 +319,7 @@ df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted
 #Calculate confidence interval
 ##############################################
 
-calculate_ci=True
+calculate_ci=False
 
 ci_params=['first_A','second_A','third_A','first_Dres','first_T2','second_T2']
 ci2d_pairs=[]
