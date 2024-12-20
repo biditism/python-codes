@@ -19,7 +19,7 @@ def DQ_intensity(tau,parameters):
         
     first_comp= fn.DQ_dist_Dres_1_T2(tau, Dres_med=parameters['first_Dres'], Dres_sigma=parameters['first_sigma'],T2=parameters['first_T2'], A=parameters['first_A'], beta=parameters['first_beta'])   
     
-    second_comp= fn.DQ_dist_Dres_1_T2(tau, Dres_med=parameters['second_Dres'], Dres_sigma=parameters['second_sigma'],T2=parameters['second_T2'], A=parameters['second_A'], beta=parameters['second_beta']))
+    second_comp= fn.DQ_dist_Dres_1_T2(tau, Dres_med=parameters['second_Dres'], Dres_sigma=parameters['second_sigma'],T2=parameters['second_T2'], A=parameters['second_A'], beta=parameters['second_beta'])
     
     intensity= first_comp + second_comp
 
@@ -56,7 +56,7 @@ data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
 tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
 DQ_cutoff=exp_info['DQ_cutoff'] #Final point for DQ curve fitting
 
-tail_freedom=0.05 #Percentage freedeom for tail to vary later
+tail_freedom=0.001 #Percentage freedeom for tail to vary later
 
 
 connectivity=['first','second'] #Number of components
@@ -152,6 +152,8 @@ DQ_params['first_T2'].set(expr='second_T2 * diff_T2_1')
 DQ_params.add('diff_T2_2',value=0.1,min=0,max=1)
 DQ_params['second_T2'].set(expr='tail_T2 * diff_T2_2')
 
+
+DQ_params['second_sigma'].set(value=0.001,vary=False)
 ##############################################
 #Define DQ and MQ models and other variables
 ##############################################
@@ -190,7 +192,7 @@ sim_fit=lm.Minimizer(
 # #=============================================================================
 # #Initial fit for parameter initialization
 # #=============================================================================
-read= False
+read= True
 
 if read is True:
     DQ_params= oth.load_object('last_fit_result.pckl')
@@ -312,7 +314,7 @@ df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted
 #Calculate confidence interval
 ##############################################
 
-calculate_ci=False
+calculate_ci=True
 
 ci_params=['first_A','second_A','first_Dres','second_Dres','first_sigma','second_sigma','first_T2','second_T2']
 ci2d_pairs=[]
@@ -326,22 +328,22 @@ if calculate_ci is True:
         sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.2)
 
 
-    try:
-        ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
+    # try:
+    #     ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
 
-    except Exception as error:
-        print("CI not calculated",error)
-    else:
-        lm.ci_report(ci)
+    # except Exception as error:
+    #     print("CI not calculated",error)
+    # else:
+    #     lm.ci_report(ci)
 
-        #Write fit report to the file
-        file1 = open(file+"_conf_interval.txt", "w")
-        print(lm.ci_report(ci),file=file1)
-        file1.close()
+    #     #Write fit report to the file
+    #     file1 = open(file+"_conf_interval.txt", "w")
+    #     print(lm.ci_report(ci),file=file1)
+    #     file1.close()
 
-        #Pickel the confidence interval object
-        oth.write_object(ci,file+'_ci.pckl')
-        oth.write_object(trace,file+'_ci-trace.pckl')
+    #     #Pickel the confidence interval object
+    #     oth.write_object(ci,file+'_ci.pckl')
+    #     oth.write_object(trace,file+'_ci-trace.pckl')
 
     ci_dict={
         'minimizer': sim_fit,
@@ -354,10 +356,19 @@ if calculate_ci is True:
     #Pickel the confidence interval 2d object
     oth.write_object(ci2d_result,file+'_ci2d.pckl')
 
-    fig,ax=plt.subplots(len(ci2d_result)//3,3)
+        num=len(ci2d_result)
+    y=int(num**0.5)
+    x=int(num/y)
+    while num % x !=0:
+        y=y-1
+        x=int(num/y)
+        print(x,y)
+    
+    fig,ax=plt.subplots(x,y)
 
     for idx,result in enumerate(ci2d_result):
-        i,j=idx//3,idx % 3
+        i,j=idx//len(ax[0]),idx % len(ax[0])
+        print(i,j)
         pair,x,y,grid=result[0],result[1],result[2],result[3]
         # Plot chi-sqr
         ax[i,j].contour(x,y,grid)
@@ -368,7 +379,7 @@ if calculate_ci is True:
     fig.subplots_adjust(right=0.8)
     cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
     fig.colorbar(plt.cm.ScalarMappable(), cax=cbar_ax)
-    fig.set_size_inches(16,12)
+    fig.set_size_inches(3*(len(ax)+1),4*len(ax[0]))
     plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
     plt.close()

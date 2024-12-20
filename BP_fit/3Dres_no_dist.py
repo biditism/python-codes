@@ -361,10 +361,19 @@ if calculate_ci is True:
     #Pickel the confidence interval 2d object
     oth.write_object(ci2d_result,file+'_ci2d.pckl')
 
-    fig,ax=plt.subplots(len(ci2d_result)//3,3)
+     num=len(ci2d_result)
+    y=int(num**0.5)
+    x=int(num/y)
+    while num % x !=0:
+        y=y-1
+        x=int(num/y)
+        print(x,y)
+    
+    fig,ax=plt.subplots(x,y)
 
     for idx,result in enumerate(ci2d_result):
-        i,j=idx//3,idx % 3
+        i,j=idx//len(ax[0]),idx % len(ax[0])
+        print(i,j)
         pair,x,y,grid=result[0],result[1],result[2],result[3]
         # Plot chi-sqr
         ax[i,j].contour(x,y,grid)
@@ -375,7 +384,7 @@ if calculate_ci is True:
     fig.subplots_adjust(right=0.8)
     cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
     fig.colorbar(plt.cm.ScalarMappable(), cax=cbar_ax)
-    fig.set_size_inches(16,12)
+    fig.set_size_inches(3*(len(ax)+1),4*len(ax[0]))
     plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
     plt.close()

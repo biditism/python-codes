@@ -356,13 +356,13 @@ def slice_area(spectra_set, no_of_slices=1, start=None, stop=None, slice_points=
 def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
     # Get the current folder name
     current_folder = os.path.basename(os.getcwd())
-    
     # Read the CSV file, using the specified index column
     df = pd.read_csv(filename, index_col=index_col)
-    
+    df.index = df.index.map(str)
     # Check if the current folder matches any values in the index (EXPNO)
     if current_folder in df.index.astype(str):  # Convert index to string for comparison
         # Filter the DataFrame to return only the row(s) that match the current folder name
+        
         matching_row = df.loc[current_folder]
         
         # Dictionary to store the column data as variables
@@ -378,15 +378,48 @@ def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
 
 def single_ci2d(i): #i is a tuple in the form (dictionary,tuple)
     fitter,params=i[0],i[1]
-    x,y,grid = lm.conf_interval2d(fitter['minimizer'], fitter['result'], params[0], params[1])    
+    x,y,grid = lm.conf_interval2d(fitter['minimizer'], fitter['result'], params[0], params[1],prob_func=chi)    
 
     return (params,x,y,grid)
+
+def single_ci(i): #i is a tuple in the form (dictionary,parameter)
+    fitter,params=i[0],i[1]
+    print(params)
+    ci,trace = lm.conf_interval(fitter['minimizer'], fitter['result'], trace=True,p_names=params,prob_func=chi,sigmas=fitter['sigmas'])    
+
+    return (params[0],ci,trace)
 
 ##Update intial values and bounds to new parameter values
 def update_bounds(parameter,value_dict,change=None,width=0.4):
     for key,values in value_dict.items():
         parameter[key].set(value=values,min=values*(1-width),max=values*(1+width))
     return parameter
+
+#Calculate the ratio of chi-sqr of the new fit and the best fit
+def chi_ratio(best_fit,new_fit):
+    ratio=new_fit.chisqr/best_fit.chisqr
+    return ratio
+
+#Calculate the chi-sqr of the new fit (required for conf_interval2d to work)
+def chi(best_fit,new_fit):
+    return new_fit.chisqr
+
+#Prepare ppm axis from 2d experiment
+def make_ppm_axis2d(dic):
+    ppm_axis= dict()
+    for key,value  in dic.items():
+        ppm_range= value['SW_p']/value['SF']
+        ppm_ref = value['OFFSET']
+        ppm=np.array([-1*(i+(1/2))/value['SI']*ppm_range for i in range(value['SI'])])+ppm_ref
+        ppm_axis[key]=ppm
+    return ppm_axis
+
+#Prepare ppm axis from 1d experiment
+def make_ppm_axis1d(dic):
+    ppm_range= dic['procs']['SW_p']/dic['procs']['SF']
+    ppm_ref = dic['procs']['OFFSET']
+    ppm=np.array([-1*(i+(1/2))/dic['procs']['SI']*ppm_range for i in range(dic['procs']['SI'])])+ppm_ref
+    return ppm
 ###################################################
 # Creation of fitting models
 ###################################################

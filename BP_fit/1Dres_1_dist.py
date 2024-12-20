@@ -52,7 +52,7 @@ data_cutoff=exp_info['data_cutoff'] #Cutoff for excess data points
 tail_cutoff=exp_info['tail_cutoff'] #Start point for tail fitting
 DQ_cutoff=exp_info['DQ_cutoff'] #Final point for DQ curve fitting
 
-tail_freedom=0.05 #Percentage freedeom for tail to vary later
+tail_freedom=0.1 #Percentage freedeom for tail to vary later
 
 
 connectivity=['first'] #Number of components
@@ -271,6 +271,28 @@ fitted_points_MQ = {
 }
 
 
+##############################################
+#Plot and save graphs
+##############################################
+
+oth.plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, file)
+
+#Plot of the Dres distribution
+prob = {}
+Dres = {}
+for x in connectivity:
+    lower,upper=lognorm.interval(0.99, result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    Dres[x] =np.linspace(lower,upper,1000)
+    prob[x]=lognorm.pdf(Dres[x], result[f'{x}_sigma'],scale=result[f'{x}_Dres'])
+    plt.plot(Dres[x], prob[x],label=x)    
+plt.savefig(file+'_Dres.pdf', format="pdf", bbox_inches="tight")
+plt.savefig(file+'_Dres.png', format="png", bbox_inches="tight")
+plt.close()
+##############################################
+#Create a result dataframe and write outputs to file
+##############################################
+
+df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted)
 
 ##############################################
 #Calculate confidence interval
