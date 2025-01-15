@@ -68,7 +68,8 @@ def clean(df,cutoff=None,DQ_cutoff=None,omit=None,k=4,norm_factor=None):
     #Remove points with artefacts
     if omit is not None:
         print("No of experimental points:",df.shape[0])
-        df = df.drop(omit-1)
+        for x in omit:
+            df = df.drop(x-1)
         print("No of experimental points after artefact removal:",df.shape[0])
     
     a=0
@@ -372,6 +373,8 @@ def read_exp_parameters(filename='../exp_info.csv', index_col='EXP'):
         for column in df.columns:
             variables[column] = matching_row[column] if isinstance(matching_row, pd.Series) else matching_row[column].values[0]
         
+        variables[index_col] = current_folder
+        
         return variables
     else:
         return f"No matching EXPNO found for folder: {current_folder}"
@@ -491,6 +494,14 @@ def single_point(i): #i is a tuple in the form (dictionary,fixed value)
     print(y,datetime.now(),lowest.chisqr)
     return (y,lowest)
 
+def single_point_no_randomize(i): #i is a tuple in the form (dictionary,fixed value)
+    #Define some defaults
+    x,y=i[0],i[1] 
+    method= x.get('method','leastsq')
+    params = x['params']
+    params[x['fixed']].set(value=y,vary=False)
+    lowest=x['fit'].minimize(method=method,params=params)
+    return (y,lowest)
 
 #Simultaneous fit
 def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None, scale=fn.nothing):
@@ -512,6 +523,113 @@ def fit_single(parameter,model,x,y):
     residual = (y - model(x,params))  
     
     return residual #Minimization parameter
+
+def diff_fit_single(i):
+    n,area,fitter=i[0],i[1],i[2]
+    result = fitter['model'].fit(area,fitter['params'],B=fitter['B'],method=fitter['method'])
+    return (n,area,result,i[3])
+
+
+#Fitting of diffusion curve with two moving and one fixed components
+def diff_2_comp_1_const():
+    
+    diff_components=['first','second']
+    
+    first = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='first_',param_names=('D','A'))
+    
+    second= lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='second_',param_names=('D','A'))
+    
+    fixed = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='fixed_',param_names=('D','A'))
+    
+    model= first+second+fixed
+    
+    params = lm.Parameters()
+    
+    
+    params.add('first_D',1e-9,vary=True,min=5e-10,max=1e-8)
+    params.add('first_A',0.3,vary=True,min=0.0)
+    
+    params.add('second_D',1e-11,vary=True,min=1e-13,max=5e-10)
+    params.add('second_A',0.3,vary=True,min=0.0)
+    
+    params.add('fixed_D',0.0,vary=False,min=0,max=1e-10)
+    params.add('fixed_A',0.3,vary=True,min=0.0)
+    
+    return model,params,diff_components
+
+#Fitting of diffusion curve with one moving and one fixed components
+def diff_1_comp_1_const():
+    
+    diff_components=['first']
+    
+    first = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='first_',param_names=('D','A'))
+    
+    fixed = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='fixed_',param_names=('D','A'))
+    
+    model= first+fixed
+    
+    params = lm.Parameters()
+    
+    
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=1e-8)
+    params.add('first_A',0.3,vary=True,min=0.0)
+    
+    params.add('fixed_D',0.0,vary=False,min=0,max=1e-10)
+    params.add('fixed_A',0.3,vary=True,min=0.0)
+    
+    return model,params,diff_components
+
+
+#Fitting of diffusion curve with two moving components
+def diff_2_comp():
+    
+    diff_components=['first','second']
+    
+    first = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='first_',param_names=('D','A'))
+    
+    second= lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='second_',param_names=('D','A'))
+    
+    model= first+second
+    
+    params = lm.Parameters()
+    
+    
+    params.add('first_D',1e-9,vary=True,min=5e-10,max=1e-8)
+    params.add('first_A',0.3,vary=True,min=0.0)
+    
+    params.add('second_D',1e-11,vary=True,min=1e-13,max=5e-10)
+    params.add('second_A',0.3,vary=True,min=0.0)
+    
+    return model,params,diff_components
+
+#Fitting of diffusion curve with one moving component
+def diff_1_comp():
+    
+    diff_components=['first']
+    
+    first = lm.Model(fn.diffusion_decay,independent_vars=['B'],
+                     prefix='first_',param_names=('D','A'))
+
+    
+    model= first
+    
+    params = lm.Parameters()
+    
+    
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=1e-8)
+    params.add('first_A',0.3,vary=True,min=0.0)
+    
+    
+    return model,params,diff_components
+
+
 
 #This section contains non standard codes
 ###################################################

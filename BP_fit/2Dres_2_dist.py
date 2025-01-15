@@ -356,7 +356,7 @@ if calculate_ci is True:
     #Pickel the confidence interval 2d object
     oth.write_object(ci2d_result,file+'_ci2d.pckl')
 
-        num=len(ci2d_result)
+    num=len(ci2d_result)
     y=int(num**0.5)
     x=int(num/y)
     while num % x !=0:

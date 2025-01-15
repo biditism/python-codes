@@ -98,6 +98,7 @@ tail_result=tail_fitted.best_values
 
 
 #Write fit report and subtracted data to file
+df['Sample']=file
 df.to_csv(file+'_no_tail.csv',index=False)
 
 
@@ -211,7 +212,8 @@ if read is True:
     sim_fitted= sim_fit.minimize(method='leastsq',params=DQ_params)
 else:
     sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
-    oth.write_object(sim_fitted.params,'last_fit_result.pckl')
+
+oth.write_object(sim_fitted.params,'last_fit_result.pckl')
 
   
 temp=sim_fitted.params.valuesdict()
@@ -259,12 +261,65 @@ if search is True:
 
     #Pickel the minimizer result object
     oth.write_object(search_result,file+'_search.pckl')
-    np.argmin([y for (x,y) in chi_sqr])
 
     sim_fitted= search_result[np.argmin([y for (x,y) in chi_sqr])][1]
 
 
 print(sim_fitted.params.pretty_print())
+
+
+
+# #=============================================================================
+# #Draw a chi-sqr map
+# #=============================================================================
+
+fit_chi_sqr=sim_fitted.chisqr
+chi_sqr_map=True
+repeat=1
+map_parameters= ['first_A','second_A','third_A']
+
+if chi_sqr_map is True:
+    
+    for parameter in map_parameters:
+        if sim_fitted.params[parameter].stderr is None:
+            sim_fitted.params[parameter].stderr = abs(sim_fitted.params[parameter].value * 0.1)
+        lower = max(sim_fitted.params[parameter] - 5*sim_fitted.params[parameter].stderr,sim_fitted.params[parameter].min)
+        higher = min(sim_fitted.params[parameter] + 5*sim_fitted.params[parameter].stderr,sim_fitted.params[parameter].max)
+
+        A=np.linspace(lower, higher,num=80)
+        fitter={
+            'params':DQ_params,
+            'fixed':parameter,
+            'fit':sim_fit,
+            'method':'leastsq'
+            }
+        space= [(fitter,k) for k in A]
+        pool= Pool()
+        search_result=pool.map(oth.single_point_no_randomize,space)
+
+        #Write Chi-square vs a to the file
+        chi_sqr =[(x,y.chisqr/fit_chi_sqr) for (x,y) in search_result]
+        
+        chi_df=pd.DataFrame(chi_sqr,columns=['Value','chi_sqr'])
+        chi_df['Sample']=file
+        splitted_parameter=parameter.split('_', 1)
+        chi_df['Fraction']=splitted_parameter[0]
+        chi_df['Quantity']=splitted_parameter[1]
+        chi_df.to_csv(f'{file}_{parameter}_chisqr.txt',index=False,header=True)
+        # np.savetxt(f'{file}_{parameter}_chisqr.txt', chi_sqr,delimiter=',',comments=f'{file}',header=f'{parameter},chi_sqr')
+          
+        chi_min=min([y for (x,y) in chi_sqr])
+        plt.plot(*zip(*chi_sqr))
+        plt.ylim(chi_min*0.99, chi_min*3)
+        plt.xlabel(f'{parameter}')
+        plt.ylabel("Chi-Square")
+        plt.savefig(f'{file}_{parameter}_chisqr.pdf', format="pdf", bbox_inches="tight")
+        plt.savefig(f'{file}_{parameter}_chisqr.png', format="png", bbox_inches="tight")
+        plt.close()
+
+        #Pickel the minimizer result object
+        oth.write_object(search_result,f'{file}_{parameter}_search.pckl')
+
 
 
 
@@ -310,18 +365,14 @@ oth.plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
 
 
 ##############################################
-#Create a result dataframe and write outputs to file
-##############################################
-
-df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted)
-
-##############################################
 #Calculate confidence interval
 ##############################################
 
 calculate_ci=False
+calculate_ci2d=False
 
-ci_params=['first_A','second_A','third_A','first_Dres','first_T2','second_T2']
+
+ci_params=['first_A','second_A','third_A']
 ci2d_pairs=[]
 for i in range(len(ci_params)):
     for j in range(i+1,len(ci_params)):
@@ -329,68 +380,127 @@ for i in range(len(ci_params)):
 
 
 if calculate_ci is True:
+    
     for p in sim_fitted.params:
-        sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.2)
-
+        if sim_fitted.params[p].stderr is None:
+            sim_fitted.params[p].stderr = abs(sim_fitted.params[p].value * 0.1)
+        if p in ci_params:
+            sim_fitted.params[p].min = sim_fitted.params[p].value - 5 * sim_fitted.params[p].stderr
+            lower = sim_fitted.params[p].value + 5 * sim_fitted.params[p].stderr
+            if lower<=0:
+                lower = 0.00000001
+            sim_fitted.params[p].max = lower 
 
     try:
-        ci,trace=lm.conf_interval(sim_fit, sim_fitted,trace=True,p_names=ci_params)
+        ci_dict={
+        'minimizer': sim_fit,
+        'result': sim_fitted,
+        'sigmas':[0.5,1,1.5,2,2.5,3]
+        }
+        ci_space= [(ci_dict,[k]) for k in ci_params]
+        pool= Pool()
+        ci_result=pool.map(oth.single_ci,ci_space)
 
     except Exception as error:
-        print("CI not calculated",error)
+        print("One dimensional CI not calculated",error)
     else:
-        lm.ci_report(ci)
-
-        #Write fit report to the file
-        file1 = open(file+"_conf_interval.txt", "w")
-        print(lm.ci_report(ci),file=file1)
-        file1.close()
-
         #Pickel the confidence interval object
-        oth.write_object(ci,file+'_ci.pckl')
-        oth.write_object(trace,file+'_ci-trace.pckl')
+        oth.write_object(ci_result,file+'_ci.pckl')
 
-    ci_dict={
-        'minimizer': sim_fit,
-        'result': sim_fitted
-    }
-    ci_space= [(ci_dict,k) for k in ci2d_pairs]
-    pool= Pool()
-    ci2d_result=pool.map(oth.single_ci2d,ci_space)
-
-    #Pickel the confidence interval 2d object
-    oth.write_object(ci2d_result,file+'_ci2d.pckl')
-
-     num=len(ci2d_result)
-    y=int(num**0.5)
-    x=int(num/y)
-    while num % x !=0:
-        y=y-1
+        num=len(ci_result)
+        y=int(num**0.5)
         x=int(num/y)
-        print(x,y)
-    
-    fig,ax=plt.subplots(x,y)
+        while num % x !=0:
+            y=y-1
+            x=int(num/y)
 
-    for idx,result in enumerate(ci2d_result):
-        i,j=idx//len(ax[0]),idx % len(ax[0])
-        print(i,j)
-        pair,x,y,grid=result[0],result[1],result[2],result[3]
-        # Plot chi-sqr
-        ax[i,j].contour(x,y,grid)
-        ax[i,j].set_xlabel(pair[0],horizontalalignment='left')
-        ax[i,j].xaxis.set_label_coords(0.1,0.1)
-        ax[i,j].set_ylabel(pair[1],verticalalignment='bottom')
-        ax[i,j].yaxis.set_label_coords(0.1,0.35)
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
-    fig.colorbar(plt.cm.ScalarMappable(), cax=cbar_ax)
-    fig.set_size_inches(3*(len(ax)+1),4*len(ax[0]))
-    plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
-    plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
-    plt.close()
+        if y ==1:
+            y=int(num**0.5)
+            x=y+1
+            while x*y<num:
+                x = x+1
 
+        fig,ax=plt.subplots(x,y)
+
+        for idx,result in enumerate(ci_result):
+            i,j=idx//y,idx % y
+            parameter,ci,trace=result[0],result[1],result[2]
+            # Plot chi-sqr
+            fixed, vary, prob = trace[parameter][parameter], trace[parameter]['second_A'], trace[parameter]['prob']
+            prob=prob/sim_fitted.chisqr
+            ax[i,j].scatter(fixed,prob)
+            ax[i,j].axhline(y=3)
+            ax[i,j].set_xlabel(parameter,horizontalalignment='left')
+            ax[i,j].xaxis.set_label_coords(0.1,0.1)
+            ax[i,j].set_ylabel('rel_chisqr',verticalalignment='bottom')
+            ax[i,j].yaxis.set_label_coords(0.1,0.35)
+        fig.suptitle(f'Best fit χ-sq:{sim_fitted.chisqr}')
+        fig.set_size_inches(3*(x),4*(y))
+        plt.savefig(f'{file}_ci.pdf', format="pdf", bbox_inches="tight")
+        plt.savefig(f'{file}_ci.png', format="png", bbox_inches="tight")
+        plt.close()
+
+
+if calculate_ci2d is True:
+
+    try:
+        ci2d_dict={
+            'minimizer': sim_fit,
+            'result': sim_fitted
+        }
+        ci2d_space= [(ci2d_dict,k) for k in ci2d_pairs]
+        pool= Pool()
+        ci2d_result=pool.map(oth.single_ci2d,ci2d_space)
+
+    except Exception as error:
+        print("Two dimensional CI not calculated",error)
+
+    else:
+        #Pickel the confidence interval 2d object
+        oth.write_object(ci2d_result,file+'_ci2d.pckl')
+
+        num=len(ci2d_result)
+        y=int(num**0.5)
+        x=int(num/y)
+        while num % x !=0:
+            y=y-1
+            x=int(num/y)
+
+        if y ==1:
+            y=int(num**0.5)
+            x=y+1
+            while (x*y)<num:
+                x = x+1
+
+        fig,ax=plt.subplots(x,y)
+
+        for idx,result in enumerate(ci2d_result):
+            i,j=idx//y,idx % y
+            pair,x_value,y_value,grid=result[0],result[1],result[2],result[3]
+            # Plot chi-sqr
+            cnt=ax[i,j].contour(x_value,y_value,grid,levels=[1.1, 1.3, 1.5, 1.7, 1.9, 2.1])
+            ax[i,j].set_xlabel(pair[0],horizontalalignment='left')
+            ax[i,j].xaxis.set_label_coords(0.1,0.1)
+            ax[i,j].set_ylabel(pair[1],verticalalignment='bottom')
+            ax[i,j].yaxis.set_label_coords(0.1,0.35)
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.82, 0.15, 0.015, 0.7])
+        cbar_ax.annotate(f'χsq:{sim_fitted.chisqr:.3e}',(0,-0.1),xycoords='axes fraction')
+        fig.colorbar(cnt, cax=cbar_ax)
+        fig.set_size_inches(3*(x+1),4*(y))
+        plt.savefig(f'{file}_ci2d.pdf', format="pdf", bbox_inches="tight")
+        plt.savefig(f'{file}_ci2d.png', format="png", bbox_inches="tight")
+        plt.close()
+
+##############################################
+#Create a result dataframe and write outputs to file
+##############################################
+
+df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted)
 
 b=datetime.now()
 print(b)
 
 print(f'Execution time is {b-a}')
+
+

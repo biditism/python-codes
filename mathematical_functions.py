@@ -86,8 +86,8 @@ def lognormal2(x,mu=1,sigma=1,normalize=True):
     return prob
 
 #Intensity decay due to diffusion in a field gradient
-def diffusion_decay(gsquared,D,k,A=1):
-    intensity = A * np.exp(-k*D*gsquared)
+def diffusion_decay(B,D,A=1):
+    intensity = A * np.exp(-B*D)
     return intensity
 
 #Anderson Weiss Power Law DQ intensity
