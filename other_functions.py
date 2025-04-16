@@ -471,10 +471,13 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
         if a!=None: return tail_fit
         
         plt.ylim(0.001, 1)    
-        plotmq(df['Time'],df['I_MQ'],df['I_DQ'],df['I_nDQ'],y_axis='log', show=True,
+        plotmq(df['Time'],df[f'I_{space}'],df['I_DQ'],df['I_nDQ'],y_axis='log', show=True,
                tail=df['Tail'],subtracted=df['I_MQ_no_tail'])
         
         finish = int(input('Press 1 if you want another cutoff'))    
+        
+   
+    
 
     return tail_fit
 
@@ -549,10 +552,12 @@ def diff_2_comp_1_const():
     params = lm.Parameters()
     
     
-    params.add('first_D',1e-9,vary=True,min=5e-10,max=1e-8)
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=4e-9)
     params.add('first_A',0.3,vary=True,min=0.0)
     
-    params.add('second_D',1e-11,vary=True,min=1e-13,max=5e-10)
+    params.add('diff_D',0.1,vary=True,min=0,max=1)
+    
+    params.add('second_D',1e-11,vary=True,min=1e-13,max=4e-10,expr='first_D*diff_D')
     params.add('second_A',0.3,vary=True,min=0.0)
     
     params.add('fixed_D',0.0,vary=False,min=0,max=1e-10)
@@ -576,7 +581,7 @@ def diff_1_comp_1_const():
     params = lm.Parameters()
     
     
-    params.add('first_D',1e-9,vary=True,min=1e-10,max=1e-8)
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=4e-9)
     params.add('first_A',0.3,vary=True,min=0.0)
     
     params.add('fixed_D',0.0,vary=False,min=0,max=1e-10)
@@ -601,10 +606,12 @@ def diff_2_comp():
     params = lm.Parameters()
     
     
-    params.add('first_D',1e-9,vary=True,min=5e-10,max=1e-8)
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=4e-9)
     params.add('first_A',0.3,vary=True,min=0.0)
     
-    params.add('second_D',1e-11,vary=True,min=1e-13,max=5e-10)
+    params.add('diff_D',0.1,vary=True,min=0,max=1)
+    
+    params.add('second_D',1e-11,vary=True,min=1e-13,max=4e-10,expr='first_D*diff_D')
     params.add('second_A',0.3,vary=True,min=0.0)
     
     return model,params,diff_components
@@ -623,7 +630,7 @@ def diff_1_comp():
     params = lm.Parameters()
     
     
-    params.add('first_D',1e-9,vary=True,min=1e-10,max=1e-8)
+    params.add('first_D',1e-9,vary=True,min=1e-10,max=4e-9)
     params.add('first_A',0.3,vary=True,min=0.0)
     
     

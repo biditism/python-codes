@@ -90,6 +90,7 @@ tail_result=tail_fitted.best_values
 
 
 #Write fit report and subtracted data to file
+df['Sample']=file
 df.to_csv(file+'_no_tail.csv',index=False)
 
 
@@ -182,7 +183,8 @@ if read is True:
     sim_fitted= sim_fit.minimize(method='leastsq',params=DQ_params)
 else:
     sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
-    oth.write_object(sim_fitted.params,'last_fit_result.pckl')
+    
+oth.write_object(sim_fitted.params,'last_fit_result.pckl')
 
   
 temp=sim_fitted.params.valuesdict()

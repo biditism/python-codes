@@ -90,6 +90,11 @@ def diffusion_decay(B,D,A=1):
     intensity = A * np.exp(-B*D)
     return intensity
 
+#Non normalized sinc function
+def sinc(x):
+    value = np.sinc(x/np.pi)
+    return value
+
 #Anderson Weiss Power Law DQ intensity
 def AWPL_dq(tau,Dres,k,t0):
     

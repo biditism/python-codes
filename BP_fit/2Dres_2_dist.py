@@ -192,7 +192,7 @@ sim_fit=lm.Minimizer(
 # #=============================================================================
 # #Initial fit for parameter initialization
 # #=============================================================================
-read= True
+read= False
 
 if read is True:
     DQ_params= oth.load_object('last_fit_result.pckl')
