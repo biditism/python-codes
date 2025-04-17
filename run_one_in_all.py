@@ -12,9 +12,9 @@ def run_script_in_subfolder(script_name, folder_path, cwd):
         shutil.copy(os.path.join(cwd, script_name), destination_script_path)
         print(f"Copied {script_name} to {folder_path}")
 
-        # Set the PYTHONPATH to include the top directory
         env = os.environ.copy()
-        env["PYTHONPATH"] = cwd  # Add the top-level directory to PYTHONPATH
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [cwd, existing_pythonpath]))
 
         # Run the Python script using the current Python executable, setting the cwd to the subfolder
         print(f"Running {script_name} in {folder_path}")
