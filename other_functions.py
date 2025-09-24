@@ -16,7 +16,6 @@ import pickle
 import mathematical_functions as fn
 import shutil
 from datetime import datetime
-
 ###################################################
 # Declaration of functions
 ###################################################
@@ -437,7 +436,7 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
         params = lm.Parameters() 
         params.add('A', value=0.5 ,min=0.01 , max=0.9) #Fraction of tail
         params.add('T2', value=450, min=0) #T2 of tail
-        params.add('beta', value=1,vary=vary_beta) #Stretching exponent
+        params.add('beta', value=1,vary=vary_beta,min=0.8,max=2) #Stretching exponent
 
     a = tau_start
     
@@ -636,6 +635,51 @@ def diff_1_comp():
     
     return model,params,diff_components
 
+# Define the fitting functio for T2 decay based on the number of components
+def T2_model(components):
+    a=['first','second','third','fourth']
+    fractions=a[:components]
+
+    #Make the first T2 component
+    model=lm.Model(fn.T2_decay,independent_vars=['tau'],
+                     prefix=f'{fractions[0]}_',param_names=('T2','A','beta'))   
+    
+    # Add each T2 component
+    if components>1:
+        for a in fractions[1:]:
+            model= model +  lm.Model(fn.T2_decay,independent_vars=['tau'],
+                     prefix=f'{a}_',param_names=('T2','A','beta'))
+   
+    params=model.make_params()
+
+    
+    #Set the bounds of parameters
+    for idx,a in enumerate(fractions):
+        params[f'{a}_A'].set(min=0) #make A positive
+        params[f'{a}_T2'].set(min=0.0000001) #make T2 positive
+        params[f'{a}_beta'].set(value=1,vary=False,min=0.8,max=2) #make a non-exponential T2 decay
+
+
+    #Define the diff variables:
+    for value in range(components):
+        if value>0:
+            params.add(f'diff_T2_{value}',0.1,vary=True,min=0,max=1)
+
+    # Set each T2 longer than the other
+    if components>1:
+        params['first_T2'].set(expr='second_T2 * diff_T2_1')
+    if components>2:
+        params['second_T2'].set(expr='third_T2 * diff_T2_2')
+    if components>3:
+        params['third_T2'].set(expr='fourth_T2 * diff_T2_3')
+
+    return model,params,fractions
+
+#Fit T2 to the data
+def T2_fit_single(i):
+    n,area,fitter=i[0],i[1],i[2]
+    result = fitter['model'].fit(area,fitter['params'],tau=fitter['tau'],method=fitter['method'])
+    return (n,area,result,i[3])
 
 
 #This section contains non standard codes

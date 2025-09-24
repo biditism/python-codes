@@ -111,7 +111,7 @@ ranges = {
     'second_Dres': (0.0001, 0.5), 'second_sigma': (0.001, 5), 'second_T2': (0.005, tail_result['T2']), 'second_A': (0.01, 0.99), 'second_beta': (0.8, 2),
     'tail_T2': (tail_result['T2'] * (1 - tail_freedom), tail_result['T2'] * (1 + tail_freedom)),
     'tail_A': (tail_result['A'] * (1 - tail_freedom), tail_result['A'] * (1 + tail_freedom)),
-    'tail_beta': (0.5, 2)
+    'tail_beta': (0.8, 2)
 }
 
 
@@ -199,7 +199,7 @@ if read is True:
     sim_fitted= sim_fit.minimize(method='leastsq',params=DQ_params)
 else:
     sim_fitted= sim_fit.minimize(method='basinhopping',params=DQ_params)
-    oth.write_object(sim_fitted.params,'last_fit_result.pckl')
+oth.write_object(sim_fitted.params,'last_fit_result.pckl')
 
   
 temp=sim_fitted.params.valuesdict()
@@ -239,13 +239,14 @@ if search is True:
     chi_min=min([y for (x,y) in chi_sqr])
     plt.plot(*zip(*chi_sqr))
     plt.ylim(chi_min*0.99, chi_min*1.3)
+    plt.xlabel(f'{parameter}')
+    plt.ylabel("Chi-Square")
     plt.savefig(file+'_chisqr.pdf', format="pdf", bbox_inches="tight")
     plt.savefig(file+'_chisqr.png', format="png", bbox_inches="tight")
     plt.close()
 
     #Pickel the minimizer result object
     oth.write_object(search_result,file+'_search.pckl')
-    np.argmin([y for (x,y) in chi_sqr])
 
     sim_fitted= search_result[np.argmin([y for (x,y) in chi_sqr])][1]
 
@@ -314,7 +315,7 @@ df_result= oth.files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted
 #Calculate confidence interval
 ##############################################
 
-calculate_ci=True
+calculate_ci=False
 
 ci_params=['first_A','second_A','first_Dres','second_Dres','first_sigma','second_sigma','first_T2','second_T2']
 ci2d_pairs=[]

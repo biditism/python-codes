@@ -99,9 +99,9 @@ def sinc(x):
 def AWPL_dq(tau,Dres,k,t0):
     
     
-    exponential= np.exp(-1*(((1/5)*Dres**2)/((k-2)*(k-1)))*((k-k**2)*t0**2)+((2*k**2-4*k)*tau*t0+2*tau**(2-k)*t0**k))
+    exponential= np.exp(-1*(((1/5)*Dres**2)/((k-2)*(k-1)))*((k-k**2)*t0**2+(2*k**2-4*k)*tau*t0+2*tau**(2-k)*t0**k))
     print(exponential)
-    hyposinosuidal=np.sinh((((1/5)*Dres**2)/(2*(k-2)*(k-1)))*((k**2-k)*t0**2)+((2**(3-k)-4)*tau**(2-k)*t0**k))
+    hyposinosuidal=np.sinh((((1/5)*Dres**2)/(2*(k-2)*(k-1)))*((k**2-k)*t0**2+(2**(3-k)-4)*tau**(2-k)*t0**k))
     intensity = exponential * hyposinosuidal
     return intensity
 
@@ -110,7 +110,7 @@ def AWPL_dq_decay(tau,Dres,T2,k,t0):
 
 #Anderson Weiss Power Law MQ intensity
 def AWPL_MQ(tau,Dres,k,t0):
-    intensity = np.exp(-1*(((1/5)*Dres**2)/((k-2)*(k-1)))*((3/2)*(k-k**2)*t0**2)+((2*k**2-4*k)*tau*t0+(4-2**(2-k))*tau**(2-k)*t0**k))
+    intensity = np.exp(-1*(((1/5)*Dres**2)/((k-2)*(k-1)))*((3/2)*(k-k**2)*t0**2+(2*k**2-4*k)*tau*t0+(4-2**(2-k))*tau**(2-k)*t0**k))
     return intensity
 
 def AWPL_MQ_decay(tau,Dres,T2,k,t0):
