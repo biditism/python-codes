@@ -434,7 +434,7 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
     #Ready the parameters
     if params==None:
         params = lm.Parameters() 
-        params.add('A', value=0.5 ,min=0.01 , max=0.9) #Fraction of tail
+        params.add('A', value=0.1 ,min=0.01 , max=0.9) #Fraction of tail
         params.add('T2', value=450, min=0) #T2 of tail
         params.add('beta', value=1,vary=vary_beta,min=0.8,max=2) #Stretching exponent
 
@@ -481,7 +481,7 @@ def tail(df,tau_start=None,tail_model=None,params=None,vary_beta=False,space='di
     return tail_fit
 
 def single_point(i): #i is a tuple in the form (dictionary,fixed value)
-    x,y=i[0],i[1]    
+    x,y=i[0],i[1]
     params = randomize_parameters(x['params'], x['range'])
     params[x['fixed']].set(value=y,vary=False)
     params['tail_beta'].set(value=1,vary=False)
@@ -504,6 +504,16 @@ def single_point_no_randomize(i): #i is a tuple in the form (dictionary,fixed va
     params[x['fixed']].set(value=y,vary=False)
     lowest=x['fit'].minimize(method=method,params=params)
     return (y,lowest)
+
+def single_point_no_randomize_2fixed(i): #i is a tuple in the form (dictionary,fixed value1,fixed value2)
+    #Define some defaults
+    x,y,z=i[0],i[1],i[2] 
+    method= x.get('method','leastsq')
+    params = x['params']
+    params[x['fixed']].set(value=y,vary=False)
+    params[x['fixed2']].set(value=z,vary=False)
+    lowest=x['fit'].minimize(method=method,params=params)
+    return (y,z,lowest)
 
 #Simultaneous fit
 def fit_simultaneous(parameter,tau,tau_truncated,DQ,MQ,model_DQ,model_MQ,T2_penalty=None,Dres_penalty=None, scale=fn.nothing):
