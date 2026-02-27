@@ -57,6 +57,22 @@ def rawdata(filename="BP_303.txt",sample=None):
     
     return df,sample
 
+#Get the foldername and the file with Baum-Pines data
+def high_field_FID_rawdata(filename="clean_fid.txt",sample=None):
+    if sample == None:
+        sample= os.getcwd()
+        print(sample)
+        sample = sample.replace('\\','/')
+        sample= sample.split('/')[-1]
+    df = pd.read_csv(filename, sep=',',header=None,names=['Time','I_real','I_imag','Magnitude'])
+    
+    #delete old files from directory
+    for f in os.listdir(os.curdir):
+        if f.startswith(sample):
+            os.remove(f)
+    
+    return df,sample
+
 #Normalization to the first point of the data and cutoff extra data
 def clean(df,cutoff=None,DQ_cutoff=None,omit=None,k=4,norm_factor=None):
     
@@ -116,6 +132,32 @@ def clean(df,cutoff=None,DQ_cutoff=None,omit=None,k=4,norm_factor=None):
     
     return df_new
 
+
+#Normalization to the first point of the data and cutoff extra data
+def high_field_FID_clean(df,cutoff=100,omit=None,norm_factor=None):
+    
+    #Remove points with artefacts
+    if omit is not None:
+        print("No of experimental points:",df.shape[0])
+        for x in omit:
+            df = df.drop(x-1)
+        print("No of experimental points after artefact removal:",df.shape[0])
+    
+    
+    if norm_factor==None: norm_factor = max(df['I_real'])
+
+    df['I_real'] = df['I_real'] / norm_factor
+    df['I_imag'] = df['I_imag'] / norm_factor
+    df['Magnitude'] = df['Magnitude'] / norm_factor
+    
+    
+    df_new = df[df['Time'] <= cutoff].copy()
+
+    if cutoff==None:
+        plotmq(df_new['Time'],df_new['I_DQ'],df_new['I_ref'],y_axis='log')
+    
+    return df_new
+
 #Scatter plot of multiple files
 def plotmq(tau,*args,y_axis='linear',save=None,show=False,**kwargs):
     for I in args:
@@ -136,6 +178,23 @@ def plotmq(tau,*args,y_axis='linear',save=None,show=False,**kwargs):
     else:
         plt.close()
 
+        #Scatter plot of multiple files
+def plotFID(tau,*args,y_axis='linear',save=None,show=False,**kwargs):
+    for I in args:
+        plt.scatter(tau,I,alpha=0.5)
+    for key,values in kwargs.items():
+        plt.plot(tau,values,label=key)
+        plt.legend(loc='upper right')
+    plt.yscale(y_axis)
+    #xmin, xmax, ymin, ymax = plt.axis()
+    #plt.ylim(bottom=0.001,top=min(ymax,1.1))
+    if save is not None:
+        plt.savefig(save+".pdf", format="pdf", bbox_inches="tight")
+        plt.savefig(save+".png", format="png", bbox_inches="tight")
+    if show:
+        plt.show()
+    else:
+        plt.close()
 
 
 #Grab only required parameters from the parameter set
@@ -218,6 +277,33 @@ def plot_results(tau, DQ, MQ, DQ_cutoff, fitted_points_DQ, fitted_points_MQ, fil
     plt.close()
 
 
+def plot_results_FID(tau, FID, fitted_points_FID, file):
+    """
+    Plot the results of the fitted models.
+
+    :tau: Array of tau values
+    :FID: Array of FID data points
+    :fitted_points_FID: Dictionary of fitted points for FID model
+    :param file: Filename prefix for saving the plots
+    """
+
+    #FID_dict={'FID':FID}
+    # Plot FID data with linear-linear scale
+    plt.xscale('linear')
+    #plotFID(tau, y_axis='linear', save=file+'_FID_fit', **FID_dict, **fitted_points_FID)
+    plotFID(tau, FID, y_axis='linear', save=file+'_FID_fit',  **fitted_points_FID)
+
+    # Plot residuals
+    plt.plot(tau, FID - fitted_points_FID['Full_Fit_'], label='FID Residual')
+    
+    plt.legend(loc='upper right')
+    
+    # Save residuals plots
+    plt.savefig(file+'_residuals.png', format="png", bbox_inches="tight")
+    plt.close()
+
+
+
 def minimizer_result_to_dataframe(result, file):
     """
     Convert lmfit.MinimizerResult parameters to a pandas DataFrame.
@@ -297,6 +383,47 @@ def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
             shutil.copy2(f, path)
     
     return df_result
+
+
+#Write results to file and make a bakup for simultaneous fit
+def files_report_FID(df,file,fitted_points_FID,FID_fitted):
+    #dump final parameters to a file
+    f = open(file+"_fit_parameters.json", "w")
+    FID_fitted.params.dump(f)
+    f.close()  
+    
+    
+    #Write the fitted data points to file
+    df_FID = pd.DataFrame(fitted_points_FID).add_suffix('FID')
+    df_result = df.copy().assign(**df_FID)
+    df_result = df_result.assign(Sample=file)
+    df_result.to_csv(file+'_fit_value.csv',index=False)
+    
+    print(lm.fit_report(FID_fitted))
+    
+    #Write fit report to the file
+    file1 = open(file+"_fit_report.txt", "w")
+    print(lm.fit_report(FID_fitted),file=file1)
+    file1.close()
+    
+    #Write fit report in dataframe fromat
+    df_params = minimizer_result_to_dataframe(FID_fitted, file)
+    df_params.to_csv(file+'_fit_report.csv',index=False)
+    
+    
+    #Pickel the minimizer result object
+    write_object(FID_fitted,file+'_minimized.pckl')
+    
+    now=datetime.now()
+    path='./temp/'+ now.strftime('%Y%m%d%H%M%S')+'/'
+    os.makedirs(path,exist_ok=True)
+    
+    for f in os.listdir(os.curdir):
+        if f.startswith(file):
+            shutil.copy2(f, path)
+    
+    return df_result
+
 
 #Write results to file and make a bakup for InDQ fit
 def files_report_InDQ(df,file,fitted_points_nDQ,fitted):
@@ -690,6 +817,151 @@ def T2_fit_single(i):
     n,area,fitter=i[0],i[1],i[2]
     result = fitter['model'].fit(area,fitter['params'],tau=fitter['tau'],method=fitter['method'])
     return (n,area,result,i[3])
+
+
+def phasecorr_time_domain(data, notebook=False):
+    """
+
+    Changed from nmrglue to show both real and imaginary part.
+
+    Manual Phase correction using matplotlib
+
+    A matplotlib widget is used to manually correct the phase of a Fourier
+    transformed dataset. If the dataset has more than 1 dimensions, the first
+    trace will be picked up for phase correction.  Clicking the 'Set Phase'
+    button will print the current linear phase parameters to the console.
+    A ipywidget is provided for use with Jupyter Notebook to avoid changing
+    backends. This can be accessed with notebook=True option in this function
+
+    .. note:: Needs matplotlib with an interactive backend.
+
+    Parameters
+    ----------
+    data : ndarray
+        Array of NMR data.
+    notebook : Bool
+        True for plotting interactively in Jupyter Notebook
+        Uses ipywidgets instead of matplotlib widgets
+
+    Returns
+    -------
+    p0, p1 : float
+        Linear phase correction parameters. Zero and first order phase
+        corrections in degrees calculated from pc0, pc1 and pivot displayed
+        in the interactive window.
+
+    Examples
+    --------
+    >>> import nmrglue as ng
+    >>> p0, p1 = ng.process.proc_autophase.manual_ps(data)
+    >>> # do manual phase correction and close window
+    >>> phased_data = ng.proc_base.ps(data, p0=p0, p1=p1)
+
+    If you are using a Jupyter Notebook::
+
+        In  [1] ng.process.proc_autophase.manual_ps(data)
+        Out [1] # do manual phase correction. p0 and p1 values will be updated
+                # continuously as you do so and are printed below the plot
+        In  [2] phased_data = ng.proc_base.ps(data, p0=p0, p1=p1)
+
+    """
+
+    if len(data.shape) == 2:
+        data = data[0, ...]
+    elif len(data.shape) == 3:
+        data = data[0, 0, ...]
+    elif len(data.shape) == 4:
+        data = data[0, 0, 0, ...]
+
+    if notebook:
+        from ipywidgets import interact, fixed
+
+        def phasecorr(dataset, phcorr0, phcorr1, pivot):
+            fig, ax = plt.subplots(figsize=(10, 7))
+            phaseddata = dataset * np.exp(
+                1j * (phcorr0 + phcorr1 * (
+                    np.arange(-pivot, -pivot+dataset.size)/dataset.size)))
+
+            ax.plot(np.real(phaseddata), lw=1, color='black')
+            ax.plot(np.imag(phaseddata), lw=1, color='red')
+            ax.set(ylim=(np.min(np.real(data))*2, np.max(np.real(data))*2))
+            ax.axvline(pivot, color='r', alpha=0.5)
+            plt.show()
+
+            p0 = np.round(
+                (phcorr0 - phcorr1 * pivot/dataset.size) * 360 / 2 / np.pi, 3)
+            p1 = np.round(phcorr1*360/2/np.pi, 3)
+
+            print('p0 =', p0, 'p1 =', p1)
+
+        interact(
+            phasecorr,
+            dataset=fixed(data),
+            phcorr0=(-np.pi, np.pi, 0.01),
+            phcorr1=(-10*np.pi, 10*np.pi, 0.01),
+            pivot=(0, data.size, 1))
+
+    else:
+
+        from matplotlib.widgets import Slider, Button
+
+        # --- figure/axes ---
+        fig, ax = plt.subplots()
+        plt.subplots_adjust(left=0.25, bottom=0.35)
+
+        # plot BOTH real and imaginary parts
+        (line_re,) = ax.plot(data.real, lw=1, color="black", label="Re")
+        (line_im,) = ax.plot(data.imag, lw=1, color="tab:red", label="Im")
+
+        ax.legend(loc="upper right")
+        ax.set_xlabel("index")
+        ax.set_ylabel("value")
+        ax.grid()
+
+        # --- widgets ---
+        axcolor = "white"
+        axpc0 = plt.axes([0.25, 0.10, 0.65, 0.03], facecolor=axcolor)
+        axpc1 = plt.axes([0.25, 0.15, 0.65, 0.03], facecolor=axcolor)
+        axpiv = plt.axes([0.25, 0.20, 0.65, 0.03], facecolor=axcolor)
+        axpst = plt.axes([0.25, 0.25, 0.15, 0.04], facecolor=axcolor)
+
+        spc0 = Slider(axpc0, "p0", -360, 360, valinit=0)
+        spc1 = Slider(axpc1, "p1", -360, 360, valinit=0)
+        spiv = Slider(axpiv, "pivot", 0, data.size, valinit=0)
+        axps = Button(axpst, "Set Phase", color=axcolor)
+
+        def update(val):
+            pc0 = spc0.val * np.pi / 180
+            pc1 = spc1.val * np.pi / 180
+            pivot = spiv.val
+
+            phase_ramp = pc0 + (pc1 * np.arange(-pivot, -pivot + data.size) / data.size)
+            rotated = (data * np.exp(1.0j * phase_ramp)).astype(data.dtype)
+
+            # update BOTH traces
+            line_re.set_ydata(rotated.real)
+            line_im.set_ydata(rotated.imag)
+
+            fig.canvas.draw_idle()
+
+        def setphase(event):
+            p0 = spc0.val - spc1.val * spiv.val / data.size
+            p1 = spc1.val
+            print(p0, p1)
+
+        spc0.on_changed(update)
+        spc1.on_changed(update)
+        spiv.on_changed(update)
+        axps.on_clicked(setphase)
+
+        plt.show(block=True)
+
+        p0 = spc0.val - spc1.val * spiv.val / data.size
+        p1 = spc1.val
+        return p0, p1
+
+
+
 
 
 #This section contains non standard codes
