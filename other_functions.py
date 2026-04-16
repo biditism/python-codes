@@ -58,6 +58,31 @@ def rawdata(filename="BP_303.txt",sample=None):
     return df,sample
 
 #Get the foldername and the file with Baum-Pines data
+def high_field_FID_kinetics_rawdata(filename="clean_fid",sample=None,fidlist=[0],cutoff=200,omit=None):
+    if sample == None:
+        sample= os.getcwd()
+        print(sample)
+        sample = sample.replace('\\','/')
+        sample= sample.split('/')[-1]
+    df_dict={}
+
+    for a in fidlist:
+        df= pd.read_csv(f'{filename}_{a}.txt', sep=',',header=None,names=['Time','I_real','I_imag','Magnitude','Time_point'])
+        
+        if omit is not None:
+            #print("No of experimental points:",df.shape[0])
+            for x in omit:
+                df = df.drop(x-1)
+            #print("No of experimental points after artefact removal:",df.shape[0])
+
+
+        df = df[df['Time'] <= cutoff]
+
+
+        df_dict[a] = df
+    
+    return df_dict,sample
+
 def high_field_FID_rawdata(filename="clean_fid.txt",sample=None):
     if sample == None:
         sample= os.getcwd()
@@ -72,6 +97,7 @@ def high_field_FID_rawdata(filename="clean_fid.txt",sample=None):
             os.remove(f)
     
     return df,sample
+
 
 #Normalization to the first point of the data and cutoff extra data
 def clean(df,cutoff=None,DQ_cutoff=None,omit=None,k=4,norm_factor=None):

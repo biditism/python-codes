@@ -43,8 +43,8 @@ print(f'{exp_info['EXP']}: Dead time = {dead_time}, dwell time = {dwell_time}, 9
 
 # In[6]:
 
-
-fid_dig_filter_removed=ng.bruker.remove_digital_filter(dic,fid,truncate=True)
+#NMR glue's method of correcting digital filter artifact
+#fid_dig_filter_removed=ng.bruker.remove_digital_filter(dic,fid,truncate=True)
 
 
 # In[9]:
@@ -58,19 +58,22 @@ fid_dig_filter_removed=ng.bruker.remove_digital_filter(dic,fid,truncate=True)
 phase = {"p0": 0, "p1":0}
 
 
-read_phase=True
+read_phase=exp_info.get('read_phase_correction',False)#Do phase correction if not stated
 
 if read_phase==True:
-        with open("phase.txt") as f:
-                phase['p0']=float(f.readline())
-                phase['p1']=float(f.readline())
-        fid_phase_corrected=ng.proc_base.ps(fid, p0=phase['p0'] , p1=phase['p1'])
+
+	try:
+	        with open("phase.txt") as f:
+	                phase['p0']=float(f.readline())
+	                phase['p1']=float(f.readline())
+	except:
+		print("No phase.txt file. Phase correction from TopSpin will be used.")
+		p0,p1=dic['procs']['PHC0'],dic['procs']['PHC1']
+	fid_phase_corrected=ng.proc_base.ps(fid, p0=phase['p0'] , p1=phase['p1'])
 
 # In[10]:
-
-
 	
-if read_phase==False:
+else:
 
 	phase['p0'],phase['p1']=oth.phasecorr_time_domain(fid)
 	# In[11]:
@@ -82,7 +85,7 @@ if read_phase==False:
 	#plt.grid()
 	#plt.show()
 
-	with open('phase.txt', 'w') as file: file.write(f'{phase['p0']}\n{phase['p1']}')
+with open('phase.txt', 'w') as file: file.write(f'{phase['p0']}\n{phase['p1']}')
 
 
 
