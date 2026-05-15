@@ -412,41 +412,47 @@ def files_report(df,file,fitted_points_DQ,fitted_points_MQ,sim_fitted):
 
 
 #Write results to file and make a bakup for simultaneous fit
-def files_report_FID(df,file,fitted_points_FID,FID_fitted):
+def files_report_FID(df,file,fitted_points_FID,FID_fitted,write=True):
     #dump final parameters to a file
-    f = open(file+"_fit_parameters.json", "w")
-    FID_fitted.params.dump(f)
-    f.close()  
+    
+    if write:
+        f = open(file+"_fit_parameters.json", "w")
+        FID_fitted.params.dump(f)
+        f.close()  
     
     
     #Write the fitted data points to file
     df_FID = pd.DataFrame(fitted_points_FID).add_suffix('FID')
     df_result = df.copy().assign(**df_FID)
     df_result = df_result.assign(Sample=file)
-    df_result.to_csv(file+'_fit_value.csv',index=False)
     
-    print(lm.fit_report(FID_fitted))
+    if write:
+        df_result.to_csv(file+'_fit_value.csv',index=False)
     
-    #Write fit report to the file
-    file1 = open(file+"_fit_report.txt", "w")
-    print(lm.fit_report(FID_fitted),file=file1)
-    file1.close()
+    #print(lm.fit_report(FID_fitted))
+    if write:
+
+        #Write fit report to the file
+        file1 = open(file+"_fit_report.txt", "w")
+        print(lm.fit_report(FID_fitted),file=file1)
+        file1.close()
     
     #Write fit report in dataframe fromat
     df_params = minimizer_result_to_dataframe(FID_fitted, file)
-    df_params.to_csv(file+'_fit_report.csv',index=False)
+    if write:
+        df_params.to_csv(file+'_fit_report.csv',index=False)
     
     
-    #Pickel the minimizer result object
-    write_object(FID_fitted,file+'_minimized.pckl')
+        #Pickel the minimizer result object
+        write_object(FID_fitted,file+'_minimized.pckl')
     
-    now=datetime.now()
-    path='./temp/'+ now.strftime('%Y%m%d%H%M%S')+'/'
-    os.makedirs(path,exist_ok=True)
+        now=datetime.now()
+        path='./temp/'+ now.strftime('%Y%m%d%H%M%S')+'/'
+        os.makedirs(path,exist_ok=True)
     
-    for f in os.listdir(os.curdir):
-        if f.startswith(file):
-            shutil.copy2(f, path)
+        for f in os.listdir(os.curdir):
+            if f.startswith(file):
+                shutil.copy2(f, path)
     
     return df_result
 
@@ -986,9 +992,33 @@ def phasecorr_time_domain(data, notebook=False):
         p1 = spc1.val
         return p0, p1
 
+def semilog_series(length, k):
+    series = np.zeros(length)
+    for n in range(1, length):
+        series[n] = 2 ** ((n-1)  // k)
+    return series
 
+def bl_FID_kin_time_axis(d5,TD,l5=1000):
+    """
+    The time axis for kinetics measurement in high field using the
+    pulse program bl_FID_kin
+    d5= time between two experiments (including the experiment time)
+    l5= double d5 after these number of experiments (integer)
+    TD= total number of experiments (integer)
+    """
+    N=semilog_series(TD,l5)
+    delay=d5*N
+    time_point=np.cumsum(delay)
+    return time_point
 
-
+def second_to_hrminsec(exp_time):
+    exp_time_hr=exp_time // 3600
+    s_remaining=(exp_time-exp_time_hr*3600)
+    exp_time_min=s_remaining//60
+    s_remaining=s_remaining-exp_time_min*60
+    #print(f"Total experiment time is {exp_time} second or {exp_time_hr} hour, {exp_time_min} minute and {s_remaining} second ")
+    hrminsec=f"{exp_time} second or {exp_time_hr} hour, {exp_time_min} minute and {s_remaining} second "
+    return hrminsec
 
 #This section contains non standard codes
 ###################################################
